@@ -1,0 +1,13 @@
+# Dependencies
+**/node_modules/
+
+# Builds
+frontend/dist/
+
+# Secrets — never commit real env files
+**/.env
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  html,
+  body {
+    @apply bg-bg text-text font-sans;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  /* Custom scrollbar for the chat and lists */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border-strong rounded;
+  }
+}
+
+@layer components {
+  .btn-accent {
+    @apply w-full bg-accent text-bg font-extrabold uppercase tracking-wider rounded-lg py-4 transition-opacity;
+  }
+  .btn-accent:disabled {
+    @apply bg-surface-2 text-text-dim border border-border cursor-not-allowed;
+  }
+  .field {
+    @apply w-full bg-surface-2 border border-border-strong rounded-lg px-4 py-3 text-text placeholder:text-text-dim outline-none transition-colors;
+  }
+  .field:focus {
+    @apply border-accent;
+  }
+  .field-error {
+    @apply border-danger;
+  }
+  .label {
+    @apply block text-xs uppercase tracking-widest text-text-mid mb-2;
+  }
+}
