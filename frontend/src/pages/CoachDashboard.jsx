@@ -3,19 +3,32 @@ import { useAuth } from '../auth';
 import { api } from '../api';
 import { formatDate, isoFor, todayISO } from '../lib/date';
 import WorkoutEditor from '../components/WorkoutEditor';
+import SkillForm from '../components/SkillForm';
+import ChatThread from '../components/ChatThread';
+import ExerciseHistory from '../components/ExerciseHistory';
+import NotificationBell from '../components/NotificationBell';
+import InviteModal from '../components/InviteModal';
 
 export default function CoachDashboard() {
   const { user, logout } = useAuth();
   const [trainees, setTrainees] = useState([]);
+  const [unread, setUnread] = useState({});
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showInvite, setShowInvite] = useState(false);
+
+  async function loadTrainees() {
+    const [data, unreadData] = await Promise.all([
+      api.get('/api/coach/trainees'),
+      api.get('/api/messages/unread').catch(() => ({ byTrainee: {} })),
+    ]);
+    setTrainees(data.trainees);
+    setUnread(unreadData.byTrainee || {});
+    setLoading(false);
+  }
 
   useEffect(() => {
-    (async () => {
-      const data = await api.get('/api/coach/trainees');
-      setTrainees(data.trainees);
-      setLoading(false);
-    })();
+    loadTrainees();
   }, []);
 
   if (loading) {
@@ -26,48 +39,118 @@ export default function CoachDashboard() {
     return <TraineeManager trainee={selected} onBack={() => setSelected(null)} />;
   }
 
+  const needAttention = trainees.filter((t) => t.needsAttention).length;
+
   return (
     <div className="max-w-app mx-auto px-4 sm:px-5 pt-5 pb-16">
-      <header className="flex justify-between items-end mb-8 pb-4 border-b border-border">
+      <header className="flex justify-between items-center mb-8 pb-4 border-b border-border">
         <div>
           <div className="font-black text-2xl tracking-tight leading-none">
             COACH<span className="text-warm">.</span>
           </div>
           <div className="text-xs text-text-mid mt-1">{user?.name}</div>
         </div>
-        <button onClick={logout} className="text-xs text-text-dim hover:text-text">Log out</button>
+        <div className="flex items-center gap-2.5">
+          <NotificationBell />
+          <button
+            onClick={() => setShowInvite(true)}
+            className="bg-accent text-bg font-bold rounded-lg px-3.5 py-2 text-sm"
+          >
+            + Invite
+          </button>
+          <button onClick={logout} className="text-xs text-text-dim hover:text-text">Log out</button>
+        </div>
       </header>
 
-      <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Your Trainees</div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[11px] uppercase tracking-widest text-text-mid">
+          Your Trainees · {trainees.length}
+        </div>
+        {needAttention > 0 && (
+          <div className="text-[11px] font-semibold text-warm">{needAttention} need attention</div>
+        )}
+      </div>
+
       {trainees.length === 0 ? (
-        <div className="text-text-dim text-sm italic text-center py-10">
-          No trainees assigned yet. When a trainee signs up and is linked to you, they'll appear here.
+        <div className="text-center py-12 bg-surface border border-border rounded-xl">
+          <div className="text-3xl mb-3">🤝</div>
+          <div className="font-bold mb-1">No trainees yet</div>
+          <p className="text-text-mid text-sm mb-5 px-6">Share your invite link and clients who sign up will appear here automatically.</p>
+          <button onClick={() => setShowInvite(true)} className="bg-accent text-bg font-bold rounded-lg px-5 py-2.5 text-sm">
+            Get your invite link
+          </button>
         </div>
       ) : (
         <div className="space-y-2.5">
           {trainees.map((t) => (
-            <button
-              key={t._id}
-              onClick={() => setSelected({ ...t, id: t._id })}
-              className="w-full text-left bg-surface border border-border rounded-xl p-4 hover:border-border-strong flex items-center gap-3"
-            >
-              <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-strong grid place-items-center font-bold text-accent">
-                {t.name?.[0]?.toUpperCase() || '?'}
-              </div>
-              <div className="flex-1">
-                <div className="font-bold">{t.name}</div>
-                <div className="text-xs text-text-mid">{t.email}</div>
-              </div>
-              <span className="text-text-dim">›</span>
-            </button>
+            <TraineeCard key={t._id} trainee={t} unread={unread[t._id] || 0} onClick={() => setSelected({ ...t, id: t._id })} />
           ))}
         </div>
       )}
+
+      {showInvite && <InviteModal onClose={() => setShowInvite(false)} />}
     </div>
   );
 }
 
-// ─── Manager for one trainee: Calendar / Templates / Notes ──────────
+function TraineeCard({ trainee: t, unread, onClick }) {
+  const lastLabel = t.lastSession ? `${t.daysSince === 0 ? 'today' : t.daysSince === 1 ? 'yesterday' : `${t.daysSince}d ago`}` : 'never trained';
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left bg-surface border rounded-xl p-4 hover:border-border-strong transition-colors ${
+        t.needsAttention ? 'border-warm/50' : 'border-border'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-strong grid place-items-center font-bold text-accent shrink-0">
+          {t.name?.[0]?.toUpperCase() || '?'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold truncate">{t.name}</span>
+            {t.needsAttention && <span className="text-[9px] uppercase tracking-wide font-bold text-warm bg-warm/10 border border-warm/30 rounded px-1.5 py-0.5 shrink-0">Attention</span>}
+          </div>
+          <div className="text-xs text-text-mid truncate">{t.email}</div>
+        </div>
+        {unread > 0 && (
+          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-warm text-bg text-[11px] font-bold grid place-items-center shrink-0">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+        <span className="text-text-dim shrink-0">›</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mt-3.5 pt-3 border-t border-border">
+        <Stat value={`${t.streak}🔥`} label="streak" />
+        <Stat value={`${t.completionRate}%`} label="completion" />
+        <Stat value={lastLabel} label="last session" small />
+      </div>
+
+      <div className="mt-3 text-xs">
+        {t.todayWorkout ? (
+          <span className={t.todayDone ? 'text-accent' : 'text-text-mid'}>
+            {t.todayDone ? '✓ Done today: ' : 'Today: '}
+            <span className="font-semibold">{t.todayWorkout}</span>
+          </span>
+        ) : (
+          <span className="text-text-dim">Rest day today</span>
+        )}
+      </div>
+    </button>
+  );
+}
+
+function Stat({ value, label, small }) {
+  return (
+    <div className="text-center">
+      <div className={`font-mono font-bold text-accent ${small ? 'text-xs' : 'text-base'}`}>{value}</div>
+      <div className="text-[9px] uppercase tracking-wide text-text-mid mt-0.5">{label}</div>
+    </div>
+  );
+}
+
+// ─── Manager for one trainee ────────────────────────────────────────
 function TraineeManager({ trainee, onBack }) {
   const [tab, setTab] = useState('calendar');
   const [templates, setTemplates] = useState([]);
@@ -80,6 +163,14 @@ function TraineeManager({ trainee, onBack }) {
     loadTemplates();
   }, []);
 
+  const tabs = [
+    ['calendar', 'Calendar'],
+    ['templates', 'Templates'],
+    ['skills', 'Skills'],
+    ['progress', 'Progress'],
+    ['chat', 'Chat'],
+  ];
+
   return (
     <div className="max-w-app mx-auto px-4 sm:px-5 pt-5 pb-16">
       <button onClick={onBack} className="text-text-mid hover:text-text text-sm py-2 mb-3">← All trainees</button>
@@ -88,16 +179,14 @@ function TraineeManager({ trainee, onBack }) {
         <div className="text-xs text-text-mid">{trainee.email}</div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5 bg-surface border border-border rounded-lg p-1 mb-6">
-        {[
-          ['calendar', 'Calendar'],
-          ['templates', 'Templates'],
-          ['notes', 'Notes'],
-        ].map(([key, label]) => (
+      <div className="flex gap-1.5 bg-surface border border-border rounded-lg p-1 mb-6 overflow-x-auto">
+        {tabs.map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`py-2 rounded-md text-sm font-semibold ${tab === key ? 'bg-warm text-bg' : 'text-text-mid hover:text-text'}`}
+            className={`flex-1 whitespace-nowrap px-3 py-2 rounded-md text-sm font-semibold ${
+              tab === key ? 'bg-warm text-bg' : 'text-text-mid hover:text-text'
+            }`}
           >
             {label}
           </button>
@@ -106,7 +195,9 @@ function TraineeManager({ trainee, onBack }) {
 
       {tab === 'calendar' && <CalendarTab trainee={trainee} templates={templates} />}
       {tab === 'templates' && <TemplatesTab templates={templates} reload={loadTemplates} />}
-      {tab === 'notes' && <NotesTab trainee={trainee} />}
+      {tab === 'skills' && <SkillsTab trainee={trainee} />}
+      {tab === 'progress' && <ProgressTab trainee={trainee} />}
+      {tab === 'chat' && <ChatThread otherId={trainee.id} title={trainee.name} />}
     </div>
   );
 }
@@ -140,7 +231,6 @@ function CalendarTab({ trainee, templates }) {
 
   const byDate = useMemo(() => Object.fromEntries(schedule.map((w) => [w.date, w])), [schedule]);
 
-  // Build the month grid (Sun-start).
   const cells = useMemo(() => {
     const startWeekday = monthBounds.first.getDay();
     const days = monthBounds.last.getDate();
@@ -155,7 +245,6 @@ function CalendarTab({ trainee, templates }) {
 
   return (
     <div>
-      {/* Month nav */}
       <div className="flex items-center justify-between mb-4">
         <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="text-text-mid hover:text-text px-2 py-1">‹ Prev</button>
         <div className="font-extrabold">{monthLabel}</div>
@@ -166,13 +255,11 @@ function CalendarTab({ trainee, templates }) {
         ↻ Fill month — repeat on weekdays
       </button>
 
-      {/* Weekday header */}
       <div className="grid grid-cols-7 gap-1 mb-1 text-[10px] uppercase text-text-dim text-center">
         {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
           <div key={i}>{d}</div>
         ))}
       </div>
-      {/* Grid */}
       <div className="grid grid-cols-7 gap-1 mb-5">
         {cells.map((d, i) => {
           if (!d) return <div key={`b${i}`} />;
@@ -196,7 +283,6 @@ function CalendarTab({ trainee, templates }) {
         })}
       </div>
 
-      {/* Day editor */}
       {selectedDate && (
         <DayEditor
           trainee={trainee}
@@ -327,7 +413,7 @@ function DayEditor({ trainee, date, workout, templates, onClose, onChanged }) {
 
 function RepeatModal({ trainee, templates, defaultFrom, defaultTo, onClose, onDone }) {
   const [templateId, setTemplateId] = useState(templates[0]?._id || '');
-  const [weekdays, setWeekdays] = useState([1, 3, 5]); // Mon/Wed/Fri default
+  const [weekdays, setWeekdays] = useState([1, 3, 5]);
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultTo);
   const [saving, setSaving] = useState(false);
@@ -406,7 +492,7 @@ function RepeatModal({ trainee, templates, defaultFrom, defaultTo, onClose, onDo
 
 // ─── Templates tab ──────────────────────────────────────────────────
 function TemplatesTab({ templates, reload }) {
-  const [editing, setEditing] = useState(null); // template object or 'new'
+  const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
 
   async function save(data) {
@@ -464,7 +550,103 @@ function TemplatesTab({ templates, reload }) {
   );
 }
 
-// ─── Notes tab ──────────────────────────────────────────────────────
+// ─── Skills tab (coach-editable per trainee) ────────────────────────
+function SkillsTab({ trainee }) {
+  const [skills, setSkills] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [editing, setEditing] = useState(null); // skill object | 'new'
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    const d = await api.get(`/api/coach/trainees/${trainee.id}/skills`);
+    setSkills(d.skills);
+    setLoaded(true);
+  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trainee.id]);
+
+  async function save(data) {
+    setSaving(true);
+    try {
+      if (editing === 'new') await api.post(`/api/coach/trainees/${trainee.id}/skills`, data);
+      else await api.put(`/api/coach/skills/${editing._id}`, data);
+      setEditing(null);
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function remove(id) {
+    await api.del(`/api/coach/skills/${id}`);
+    await load();
+  }
+
+  if (editing) {
+    return (
+      <div>
+        <div className="font-bold mb-3">{editing === 'new' ? 'New skill' : `Edit: ${editing.name}`}</div>
+        <SkillForm
+          initial={editing === 'new' ? { steps: [] } : editing}
+          onSave={save}
+          onCancel={() => setEditing(null)}
+          saving={saving}
+          submitLabel="Save skill"
+        />
+      </div>
+    );
+  }
+
+  if (!loaded) return <div className="text-text-dim text-xs font-mono animate-pulse py-8 text-center">loading skills…</div>;
+
+  return (
+    <div>
+      <p className="text-xs text-text-mid mb-3">These are the progressions {trainee.name.split(' ')[0]} works on. Add or edit skills and steps — they update live in their app.</p>
+      <button onClick={() => setEditing('new')} className="w-full mb-4 py-2.5 rounded-lg bg-accent text-bg font-bold text-sm">+ New skill</button>
+      <div className="space-y-2.5">
+        {skills.map((s) => {
+          const done = Math.min(s.currentStep, s.steps.length);
+          return (
+            <div key={s._id} className="bg-surface border border-border rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl">{s.icon}</span>
+                <div className="flex-1">
+                  <div className="font-extrabold leading-tight">{s.name}</div>
+                  <div className="text-xs text-text-mid mt-0.5">
+                    {s.steps.length} steps · trainee at {done}/{s.steps.length}
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button onClick={() => setEditing(s)} className="flex-1 py-2 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">Edit</button>
+                <button onClick={() => remove(s._id)} className="py-2 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">Delete</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Progress tab (exercise history + session notes) ────────────────
+function ProgressTab({ trainee }) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Exercise History</div>
+        <ExerciseHistory endpoint={`/api/coach/trainees/${trainee.id}/exercises`} />
+      </div>
+      <div>
+        <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Session Notes</div>
+        <NotesTab trainee={trainee} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Notes ──────────────────────────────────────────────────────────
 function NotesTab({ trainee }) {
   const [sessions, setSessions] = useState([]);
   const [loaded, setLoaded] = useState(false);

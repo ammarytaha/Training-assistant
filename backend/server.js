@@ -19,6 +19,8 @@ const coachRoutes = require('./routes/coach');
 const chatRoutes = require('./routes/chat');
 const profileRoutes = require('./routes/profile');
 const scheduleRoutes = require('./routes/schedule');
+const messageRoutes = require('./routes/messages');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -54,6 +56,8 @@ app.use('/api/coach', coachRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/schedule', scheduleRoutes);
+app.use('/api/messages', messageRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // ─── 404 + error handling ───────────────────────────────────────────
 app.use(notFound);

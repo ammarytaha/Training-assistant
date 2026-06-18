@@ -1,6 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const Session = require('../models/Session');
+const Notification = require('../models/Notification');
 const { requireAuth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
@@ -44,6 +45,21 @@ router.post(
         },
         { new: true, upsert: true, setDefaultsOnInsert: true }
       );
+
+      // Alert the trainee's coach (best-effort — never block the log).
+      if (req.user.coach) {
+        try {
+          const label = name ? `“${name}”` : 'a workout';
+          await Notification.create({
+            coach: req.user.coach,
+            trainee: req.user._id,
+            type: 'session',
+            text: `${req.user.name} completed ${label} — ${setsCompleted}/${setsTotal} sets`,
+          });
+        } catch {
+          /* notification failures must not affect the response */
+        }
+      }
 
       return res.status(201).json({ session });
     } catch (err) {

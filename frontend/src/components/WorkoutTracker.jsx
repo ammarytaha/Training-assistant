@@ -3,12 +3,20 @@ import { api } from '../api';
 import { formatDate } from '../lib/date';
 import ExerciseModal from './ExerciseModal';
 
+// Pull the first number out of a prescribed string ("5 reps" -> "5", "30 sec" -> "30").
+function defaultReps(ex) {
+  const m = String(ex.reps || '').match(/\d+/);
+  return m ? m[0] : '';
+}
+
 // Renders ONE scheduled workout for a given date and logs the finished session.
-// `readOnly` (future dates) shows the plan without a finish button.
+// Trainees record the actual reps they hit per set (prefilled with the
+// prescribed target), which feeds the per-exercise progress history.
+// `readOnly` (future dates) shows the plan without logging.
 export default function WorkoutTracker({ workout, date, readOnly = false, onBack, onFinished }) {
   const [info, setInfo] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [sets, setSets] = useState({});
+  const [reps, setReps] = useState({}); // { exKey: { setIndex: repsValue } }
   const [round, setRound] = useState(0);
 
   const totalSets = useMemo(() => {
@@ -18,20 +26,44 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
 
   const doneSets = useMemo(() => {
     if (workout.isSuperset) return round;
-    return workout.exercises.reduce((sum, ex) => sum + (sets[ex.key] || 0), 0);
-  }, [workout, sets, round]);
+    let n = 0;
+    for (const ex of workout.exercises) {
+      const r = reps[ex.key] || {};
+      for (let i = 0; i < (ex.sets || 0); i++) if (Number(r[i]) > 0) n++;
+    }
+    return n;
+  }, [workout, reps, round]);
 
-  function toggleSet(exKey, index) {
-    setSets((prev) => {
-      const current = prev[exKey] || 0;
-      const next = index + 1 === current ? current - 1 : index + 1;
-      return { ...prev, [exKey]: next };
-    });
+  function setRep(exKey, i, val) {
+    setReps((p) => ({ ...p, [exKey]: { ...(p[exKey] || {}), [i]: val } }));
+  }
+  function toggleSet(ex, i) {
+    const cur = reps[ex.key]?.[i];
+    const isDone = cur !== undefined && cur !== '' && Number(cur) > 0;
+    setRep(ex.key, i, isDone ? '' : defaultReps(ex));
   }
 
   async function finish() {
     if (doneSets === 0 || saving || readOnly) return;
     setSaving(true);
+
+    // Build the per-exercise record the history view reads.
+    let perExercise;
+    if (workout.isSuperset) {
+      perExercise = { rounds: round };
+    } else {
+      perExercise = {};
+      for (const ex of workout.exercises) {
+        const r = reps[ex.key] || {};
+        const arr = [];
+        for (let i = 0; i < (ex.sets || 0); i++) {
+          const v = Number(r[i]);
+          if (v > 0) arr.push(v);
+        }
+        perExercise[ex.key] = { name: ex.name, prescribed: ex.reps || '', reps: arr };
+      }
+    }
+
     try {
       await api.post('/api/sessions', {
         date,
@@ -39,7 +71,7 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
         scheduledWorkoutId: workout._id,
         setsCompleted: doneSets,
         setsTotal: totalSets,
-        perExercise: workout.isSuperset ? { rounds: round } : sets,
+        perExercise,
       });
       onFinished?.(doneSets >= totalSets);
     } catch {
@@ -82,22 +114,39 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
                 </button>
               </div>
               {ex.sets > 0 && (
-                <div className="flex gap-2 flex-wrap">
+                <div className="space-y-1.5">
                   {Array.from({ length: ex.sets }, (_, i) => {
-                    const filled = i < (sets[ex.key] || 0);
+                    const val = reps[ex.key]?.[i] ?? '';
+                    const done = Number(val) > 0;
                     return (
-                      <button
+                      <div
                         key={i}
-                        disabled={readOnly}
-                        onClick={() => toggleSet(ex.key, i)}
-                        className={`flex-1 min-w-[48px] h-11 rounded-md font-mono font-bold text-sm border-[1.5px] transition-colors disabled:opacity-50 ${
-                          filled
-                            ? 'bg-accent border-accent text-bg'
-                            : 'bg-transparent border-border-strong text-text-dim hover:border-text-mid'
+                        className={`flex items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors ${
+                          done ? 'border-accent bg-accent/5' : 'border-border-strong'
                         }`}
                       >
-                        {i + 1}
-                      </button>
+                        <button
+                          onClick={() => toggleSet(ex, i)}
+                          disabled={readOnly}
+                          className={`w-7 h-7 shrink-0 rounded grid place-items-center text-xs font-bold disabled:opacity-50 ${
+                            done ? 'bg-accent text-bg' : 'border border-border-strong text-text-dim'
+                          }`}
+                        >
+                          {done ? '✓' : i + 1}
+                        </button>
+                        <span className="text-xs text-text-mid">Set {i + 1}</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          disabled={readOnly}
+                          value={val}
+                          onChange={(e) => setRep(ex.key, i, e.target.value)}
+                          placeholder={defaultReps(ex)}
+                          className="ml-auto w-16 field !py-1.5 !text-sm text-center disabled:opacity-50"
+                        />
+                        <span className="text-xs text-text-dim w-8">reps</span>
+                      </div>
                     );
                   })}
                 </div>

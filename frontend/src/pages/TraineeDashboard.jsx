@@ -6,6 +6,8 @@ import WorkoutTracker from '../components/WorkoutTracker';
 import AIChat from '../components/AIChat';
 import BodyweightChart from '../components/BodyweightChart';
 import SkillTree from '../components/SkillTree';
+import ExerciseHistory from '../components/ExerciseHistory';
+import ChatThread from '../components/ChatThread';
 
 export default function TraineeDashboard() {
   const { user, logout } = useAuth();
@@ -15,7 +17,8 @@ export default function TraineeDashboard() {
   const [chatOpen, setChatOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('train'); // 'train' | 'progress' | 'skills'
+  const [view, setView] = useState('train'); // 'train' | 'progress' | 'skills' | 'chat'
+  const [unread, setUnread] = useState(0);
 
   async function load() {
     const today = new Date();
@@ -38,6 +41,26 @@ export default function TraineeDashboard() {
   useEffect(() => {
     load();
   }, []);
+
+  // Poll unread message count for the Chat tab badge.
+  useEffect(() => {
+    async function loadUnread() {
+      try {
+        const d = await api.get('/api/messages/unread');
+        setUnread(d.total || 0);
+      } catch {
+        /* ignore */
+      }
+    }
+    loadUnread();
+    const t = setInterval(loadUnread, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Opening the chat marks the thread read, so clear the badge.
+  useEffect(() => {
+    if (view === 'chat') setUnread(0);
+  }, [view]);
 
   function showToast(msg) {
     setToast(msg);
@@ -136,20 +159,26 @@ export default function TraineeDashboard() {
       </header>
 
       {/* Tabs */}
-      <div className="grid grid-cols-3 gap-1.5 bg-surface border border-border rounded-lg p-1 mb-6">
+      <div className="grid grid-cols-4 gap-1.5 bg-surface border border-border rounded-lg p-1 mb-6">
         {[
           ['train', 'Train'],
           ['progress', 'Progress'],
           ['skills', 'Skills'],
+          ['chat', 'Chat'],
         ].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
-            className={`py-2 rounded-md text-sm font-semibold transition-colors ${
+            className={`relative py-2 rounded-md text-sm font-semibold transition-colors ${
               view === key ? 'bg-accent text-bg' : 'text-text-mid hover:text-text'
             }`}
           >
             {label}
+            {key === 'chat' && unread > 0 && view !== 'chat' && (
+              <span className="absolute top-1 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-warm text-bg text-[10px] font-bold grid place-items-center">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -158,10 +187,16 @@ export default function TraineeDashboard() {
         <div className="space-y-4">
           <BodyweightChart />
           <CompletionStats sessions={sessions} />
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Exercise History</div>
+            <ExerciseHistory endpoint="/api/profile/exercises" />
+          </div>
         </div>
       )}
 
       {view === 'skills' && <SkillTree />}
+
+      {view === 'chat' && <ChatThread otherId={user.coach} title="Your coach" />}
 
       {view === 'train' && (
         <>

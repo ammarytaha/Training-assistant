@@ -11,7 +11,7 @@ const client = env.gemini.enabled
 
 // Build a system prompt grounded in this trainee's real data so the AI gives
 // specific, context-aware coaching instead of generic advice.
-function buildSystemPrompt({ user, schedule, todayISO, sessions }) {
+function buildSystemPrompt({ user, schedule, todayISO, sessions, skills }) {
   const recent = (sessions || [])
     .slice(0, 8)
     .map((s) => `- ${s.date} ${s.name || 'workout'}: ${s.setsCompleted}/${s.setsTotal} sets`)
@@ -41,18 +41,33 @@ function buildSystemPrompt({ user, schedule, todayISO, sessions }) {
     }
   }
 
-  // Skill-tree progress: where they are on each progression they've started.
-  const progress = user?.skillProgress;
-  const getStep = (id) => (progress?.get ? progress.get(id) : progress?.[id]) || 0;
-  const skillLines = SKILLS.map((s) => {
-    const step = getStep(s.id);
-    if (!step) return null;
-    const done = step >= s.steps.length;
-    const label = done ? 'MASTERED' : `working on "${s.steps[step]?.name || s.steps[s.steps.length - 1].name}"`;
-    return `- ${s.name}: ${label} (${Math.min(step, s.steps.length)}/${s.steps.length})`;
-  })
-    .filter(Boolean)
-    .join('\n');
+  // Skill progressions the coach assigned this trainee (per-trainee model).
+  // Falls back to the legacy global tree if the caller didn't pass skills.
+  let skillLines;
+  if (Array.isArray(skills)) {
+    skillLines = skills
+      .map((s) => {
+        const total = s.steps.length;
+        const step = Math.min(s.currentStep || 0, total);
+        if (total === 0) return `- ${s.name}`;
+        if (step >= total) return `- ${s.name}: MASTERED (${total}/${total})`;
+        if (step === 0) return `- ${s.name}: not started yet — next up "${s.steps[0]?.name}" (0/${total})`;
+        return `- ${s.name}: working on "${s.steps[step]?.name}" (${step}/${total})`;
+      })
+      .join('\n');
+  } else {
+    const progress = user?.skillProgress;
+    const getStep = (id) => (progress?.get ? progress.get(id) : progress?.[id]) || 0;
+    skillLines = SKILLS.map((s) => {
+      const step = getStep(s.id);
+      if (!step) return null;
+      const done = step >= s.steps.length;
+      const label = done ? 'MASTERED' : `working on "${s.steps[step]?.name || s.steps[s.steps.length - 1].name}"`;
+      return `- ${s.name}: ${label} (${Math.min(step, s.steps.length)}/${s.steps.length})`;
+    })
+      .filter(Boolean)
+      .join('\n');
+  }
 
   return `You are an expert calisthenics coach inside a training app. You are coaching ${user?.name || 'a trainee'}. Their coach schedules specific workouts on specific calendar dates.
 

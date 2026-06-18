@@ -7,6 +7,7 @@ const User = require('../models/User');
 const validate = require('../middleware/validate');
 const { requireAuth } = require('../middleware/auth');
 const { signToken, setAuthCookie, clearAuthCookie } = require('../utils/token');
+const { findValidInvite } = require('../utils/invite');
 const env = require('../config/env');
 
 const router = express.Router();
@@ -35,7 +36,7 @@ const loginRules = [
 // ─── POST /auth/register ────────────────────────────────────────────
 router.post('/register', authLimiter, registerRules, validate, async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, inviteToken } = req.body;
 
     const existing = await User.findOne({ email });
     if (existing) {
@@ -48,18 +49,43 @@ router.post('/register', authLimiter, registerRules, validate, async (req, res, 
       return res.status(409).json({ error: 'That email is already registered.' });
     }
 
+    // If they came through a coach's invite link, link them to that coach.
+    const invite = await findValidInvite(inviteToken);
+    const coachId = invite ? invite.coach : null;
+
     const user = await User.create({
       name,
       email,
       password,
       provider: 'local',
-      // Only allow self-selecting "coach" if you want open signups; otherwise force trainee.
-      role: role === 'coach' ? 'coach' : 'trainee',
+      // An invited user is always a trainee under that coach. Otherwise allow
+      // self-selecting "coach" for open signups.
+      role: coachId ? 'trainee' : role === 'coach' ? 'coach' : 'trainee',
+      coach: coachId,
     });
+
+    if (invite) {
+      invite.usedCount += 1;
+      await invite.save();
+    }
 
     const token = signToken(user);
     setAuthCookie(res, token, true);
     return res.status(201).json({ user });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ─── GET /auth/invite/:token  (public invite preview) ───────────────
+// Lets the join page show whose coaching the trainee is about to join.
+router.get('/invite/:token', async (req, res, next) => {
+  try {
+    const invite = await findValidInvite(req.params.token);
+    if (!invite) return res.status(404).json({ error: 'This invite link is invalid or has expired.' });
+    const coach = await User.findById(invite.coach).select('name avatar');
+    if (!coach) return res.status(404).json({ error: 'Invite owner not found.' });
+    return res.json({ coach: { name: coach.name, avatar: coach.avatar } });
   } catch (err) {
     return next(err);
   }
@@ -113,6 +139,8 @@ router.get('/google', (req, res, next) => {
     session: false,
     scope: ['profile', 'email'],
     prompt: 'select_account',
+    // Carry the invite token (if any) through Google and back to the callback.
+    state: typeof req.query.invite === 'string' ? req.query.invite : undefined,
   })(req, res, next);
 });
 
@@ -120,10 +148,25 @@ router.get('/google', (req, res, next) => {
 router.get(
   '/google/callback',
   (req, res, next) => {
-    passport.authenticate('google', { session: false }, (err, user) => {
+    passport.authenticate('google', { session: false }, async (err, user) => {
       if (err || !user) {
         const reason = encodeURIComponent('Google sign-in failed. Please try again.');
         return res.redirect(`${env.clientUrl}/login?error=${reason}`);
+      }
+      try {
+        // If they arrived via an invite link, link a coachless trainee to that coach.
+        const inviteToken = typeof req.query.state === 'string' ? req.query.state : null;
+        if (inviteToken && user.role === 'trainee' && !user.coach) {
+          const invite = await findValidInvite(inviteToken);
+          if (invite) {
+            user.coach = invite.coach;
+            await user.save();
+            invite.usedCount += 1;
+            await invite.save();
+          }
+        }
+      } catch {
+        /* linking is best-effort; never block sign-in */
       }
       // Issue our own JWT cookie, then bounce back to the frontend.
       const token = signToken(user);

@@ -29,8 +29,9 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
-  const register = async (name, email, password, role) => {
-    const data = await api.post('/auth/register', { name, email, password, role });
+  // `extra` may carry { role } or { inviteToken } (e.g. joining via a coach link).
+  const register = async (name, email, password, extra = {}) => {
+    const data = await api.post('/auth/register', { name, email, password, ...extra });
     setUser(data.user);
     return data.user;
   };

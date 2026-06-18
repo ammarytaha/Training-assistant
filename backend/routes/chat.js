@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const Conversation = require('../models/Conversation');
 const ScheduledWorkout = require('../models/ScheduledWorkout');
 const Session = require('../models/Session');
+const TraineeSkill = require('../models/TraineeSkill');
 const { requireAuth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { generateReply } = require('../services/coachAI');
@@ -60,15 +61,16 @@ router.post(
       const from = iso(new Date(now.getTime() - 7 * 86400000));
       const to = iso(new Date(now.getTime() + 14 * 86400000));
 
-      const [schedule, sessions] = await Promise.all([
+      const [schedule, sessions, skills] = await Promise.all([
         ScheduledWorkout.find({ trainee: req.user._id, date: { $gte: from, $lte: to } }).sort({ date: 1 }),
         Session.find({ trainee: req.user._id }).sort({ date: -1 }).limit(8),
+        TraineeSkill.find({ trainee: req.user._id }).sort({ order: 1, createdAt: 1 }),
       ]);
 
       const history = convo.messages.slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.content }));
 
       const reply = await generateReply({
-        context: { user: req.user, schedule, todayISO: iso(now), sessions },
+        context: { user: req.user, schedule, todayISO: iso(now), sessions, skills },
         history,
       });
 

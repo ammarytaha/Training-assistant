@@ -4,9 +4,15 @@ const User = require('../models/User');
 const Session = require('../models/Session');
 const WorkoutTemplate = require('../models/WorkoutTemplate');
 const ScheduledWorkout = require('../models/ScheduledWorkout');
+const Invite = require('../models/Invite');
+const TraineeSkill = require('../models/TraineeSkill');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { defaultTemplates } = require('../data/defaultPlan');
+const { generateToken } = require('../utils/invite');
+const { ensureSkills, skillSnapshot } = require('../utils/skills');
+const { buildExerciseHistory } = require('../utils/exerciseHistory');
+const env = require('../config/env');
 
 const router = express.Router();
 
@@ -59,13 +65,108 @@ async function loadOwnedTrainee(req, res, next) {
   }
 }
 
+// ─── Invite links ───────────────────────────────────────────────────
+
+function invitePayload(invite) {
+  return {
+    id: invite._id,
+    token: invite.token,
+    url: `${env.clientUrl}/join/${invite.token}`,
+    active: invite.active,
+    usedCount: invite.usedCount,
+    createdAt: invite.createdAt,
+  };
+}
+
+// Current active invite link (created on first request).
+router.get('/invite', async (req, res, next) => {
+  try {
+    let invite = await Invite.findOne({ coach: req.user._id, active: true }).sort({ createdAt: -1 });
+    if (!invite) invite = await Invite.create({ coach: req.user._id, token: generateToken() });
+    return res.json({ invite: invitePayload(invite) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Rotate the link — old links stop working, a fresh one is issued.
+router.post('/invite/regenerate', async (req, res, next) => {
+  try {
+    await Invite.updateMany({ coach: req.user._id, active: true }, { $set: { active: false } });
+    const invite = await Invite.create({ coach: req.user._id, token: generateToken() });
+    return res.status(201).json({ invite: invitePayload(invite) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
 // ─── Trainees ───────────────────────────────────────────────────────
+
+const ISO = (d) => d.toISOString().split('T')[0];
+function isoDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return ISO(d);
+}
+
+// Roll a trainee's sessions up into the headline numbers the overview shows.
+function statsFor(sessions) {
+  const today = ISO(new Date());
+  const dates = new Set(sessions.map((s) => s.date));
+
+  let lastSession = null;
+  for (const s of sessions) if (!lastSession || s.date > lastSession) lastSession = s.date;
+
+  // Consecutive training days counting back from today (or yesterday).
+  let streak = 0;
+  for (let i = dates.has(today) ? 0 : 1; i < 90; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    if (dates.has(ISO(d))) streak++;
+    else break;
+  }
+
+  const recent = [...sessions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
+  const fully = recent.filter((s) => s.setsTotal > 0 && s.setsCompleted >= s.setsTotal).length;
+  const completionRate = recent.length ? Math.round((fully / recent.length) * 100) : 0;
+
+  const daysSince = lastSession ? Math.floor((new Date(today) - new Date(lastSession)) / 86400000) : null;
+  const needsAttention = daysSince === null || daysSince >= 4;
+
+  return { lastSession, streak, completionRate, sessionCount: sessions.length, daysSince, needsAttention };
+}
 
 router.get('/trainees', async (req, res, next) => {
   try {
     const filter = req.user.role === 'admin' ? { role: 'trainee' } : { role: 'trainee', coach: req.user._id };
-    const trainees = await User.find(filter).select('name email avatar createdAt');
-    return res.json({ trainees });
+    const trainees = await User.find(filter).select('name email avatar createdAt').lean();
+    const ids = trainees.map((t) => t._id);
+    const today = ISO(new Date());
+
+    // Batch the two reads instead of querying per-trainee (avoids N+1).
+    const [sessions, todaySched] = await Promise.all([
+      Session.find({ trainee: { $in: ids }, date: { $gte: isoDaysAgo(90) } })
+        .select('trainee date setsCompleted setsTotal')
+        .lean(),
+      ScheduledWorkout.find({ trainee: { $in: ids }, date: today }).select('trainee name').lean(),
+    ]);
+
+    const byTrainee = new Map(ids.map((id) => [String(id), []]));
+    for (const s of sessions) byTrainee.get(String(s.trainee))?.push(s);
+    const schedToday = new Map(todaySched.map((w) => [String(w.trainee), w.name]));
+    const doneToday = new Set(sessions.filter((s) => s.date === today).map((s) => String(s.trainee)));
+
+    const enriched = trainees.map((t) => {
+      const tid = String(t._id);
+      return {
+        ...t,
+        ...statsFor(byTrainee.get(tid) || []),
+        todayWorkout: schedToday.get(tid) || null,
+        todayDone: doneToday.has(tid),
+      };
+    });
+
+    return res.json({ trainees: enriched });
   } catch (err) {
     return next(err);
   }
@@ -270,6 +371,93 @@ router.delete('/schedule/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'Not your trainee.' });
     }
     await sw.deleteOne();
+    return res.json({ ok: true });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Per-exercise history for one trainee (coach view).
+router.get('/trainees/:traineeId/exercises', loadOwnedTrainee, async (req, res, next) => {
+  try {
+    const sessions = await Session.find({ trainee: req.trainee._id }).select('date perExercise').lean();
+    return res.json({ exercises: buildExerciseHistory(sessions) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// ─── Skills (per trainee) ───────────────────────────────────────────
+
+// List a trainee's skill progressions (seeds defaults on first use).
+router.get('/trainees/:traineeId/skills', loadOwnedTrainee, async (req, res, next) => {
+  try {
+    const skills = await ensureSkills(req.trainee);
+    return res.json({ skills });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// Add a new skill for this trainee.
+router.post(
+  '/trainees/:traineeId/skills',
+  loadOwnedTrainee,
+  [body('name').trim().isLength({ min: 1, max: 80 }).withMessage('Skill name required.')],
+  validate,
+  async (req, res, next) => {
+    try {
+      const count = await TraineeSkill.countDocuments({ trainee: req.trainee._id });
+      const skill = await TraineeSkill.create({
+        trainee: req.trainee._id,
+        coach: req.user._id,
+        order: count,
+        currentStep: 0,
+        ...skillSnapshot(req.body),
+      });
+      return res.status(201).json({ skill });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+// Load a skill and confirm the requesting coach owns its trainee.
+async function loadOwnedSkill(req, res, next) {
+  try {
+    const skill = await TraineeSkill.findById(req.params.id).populate('trainee', 'coach');
+    if (!skill) return res.status(404).json({ error: 'Skill not found.' });
+    if (req.user.role !== 'admin' && String(skill.trainee.coach) !== String(req.user._id)) {
+      return res.status(403).json({ error: 'Not your trainee.' });
+    }
+    req.skill = skill;
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// Edit a skill (name, steps, etc.). Keeps currentStep within the new step count.
+router.put(
+  '/skills/:id',
+  loadOwnedSkill,
+  [body('name').trim().isLength({ min: 1, max: 80 }).withMessage('Skill name required.')],
+  validate,
+  async (req, res, next) => {
+    try {
+      Object.assign(req.skill, skillSnapshot(req.body));
+      req.skill.currentStep = Math.min(req.skill.currentStep, req.skill.steps.length);
+      await req.skill.save();
+      return res.json({ skill: req.skill });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+router.delete('/skills/:id', loadOwnedSkill, async (req, res, next) => {
+  try {
+    await req.skill.deleteOne();
     return res.json({ ok: true });
   } catch (err) {
     return next(err);

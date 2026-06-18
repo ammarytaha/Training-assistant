@@ -1,10 +1,26 @@
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body } = require('express-validator');
 const { requireAuth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
-const { SKILLS, SKILL_BY_ID } = require('../data/skillTree');
+const Session = require('../models/Session');
+const TraineeSkill = require('../models/TraineeSkill');
+const { ensureSkills } = require('../utils/skills');
+const { buildExerciseHistory } = require('../utils/exerciseHistory');
 
 const router = express.Router();
+
+// Shape a skill doc for the frontend (keeps `id` for the existing UI).
+function skillView(doc) {
+  return {
+    id: doc._id,
+    name: doc.name,
+    group: doc.group,
+    icon: doc.icon,
+    blurb: doc.blurb,
+    steps: doc.steps,
+    currentStep: doc.currentStep,
+  };
+}
 
 // ─── Bodyweight log ─────────────────────────────────────────────────
 
@@ -44,38 +60,46 @@ router.post(
   }
 );
 
-// ─── Skill tree ─────────────────────────────────────────────────────
+// ─── Exercise history ───────────────────────────────────────────────
 
-// GET /api/profile/skills -> full tree + this user's progress per skill
-router.get('/skills', requireAuth, (req, res) => {
-  const progress = req.user.skillProgress || new Map();
-  const skills = SKILLS.map((s) => ({
-    ...s,
-    currentStep: progress.get ? progress.get(s.id) || 0 : progress[s.id] || 0,
-  }));
-  res.json({ skills });
+// GET /api/profile/exercises -> per-exercise rep history + PRs for this trainee.
+router.get('/exercises', requireAuth, async (req, res, next) => {
+  try {
+    const sessions = await Session.find({ trainee: req.user._id }).select('date perExercise').lean();
+    return res.json({ exercises: buildExerciseHistory(sessions) });
+  } catch (err) {
+    return next(err);
+  }
 });
 
-// PUT /api/profile/skills/:skillId -> set the current step index for a skill
+// ─── Skill tree (per-trainee, coach-editable) ───────────────────────
+
+// GET /api/profile/skills -> this trainee's assigned skills + their progress.
+router.get('/skills', requireAuth, async (req, res, next) => {
+  try {
+    const skills = await ensureSkills(req.user);
+    return res.json({ skills: skills.map(skillView) });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+// PUT /api/profile/skills/:id -> the trainee advances/sets their current step.
 router.put(
-  '/skills/:skillId',
+  '/skills/:id',
   requireAuth,
-  [
-    param('skillId').isString(),
-    body('currentStep').isInt({ min: 0 }).withMessage('Invalid step.'),
-  ],
+  [body('currentStep').isInt({ min: 0 }).withMessage('Invalid step.')],
   validate,
   async (req, res, next) => {
     try {
-      const skill = SKILL_BY_ID[req.params.skillId];
-      if (!skill) return res.status(404).json({ error: 'Unknown skill.' });
+      const skill = await TraineeSkill.findOne({ _id: req.params.id, trainee: req.user._id });
+      if (!skill) return res.status(404).json({ error: 'Skill not found.' });
 
-      // Clamp to the number of steps (allow == steps.length to mean "mastered").
-      const step = Math.min(Number(req.body.currentStep), skill.steps.length);
-      req.user.skillProgress.set(skill.id, step);
-      await req.user.save();
+      // Clamp to the number of steps (== steps.length means "mastered").
+      skill.currentStep = Math.min(Math.max(0, Number(req.body.currentStep)), skill.steps.length);
+      await skill.save();
 
-      return res.json({ skillId: skill.id, currentStep: step });
+      return res.json({ skill: skillView(skill) });
     } catch (err) {
       return next(err);
     }
