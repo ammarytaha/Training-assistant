@@ -30,4 +30,11 @@ export const api = {
   post: (p, body) => request(p, { method: 'POST', body }),
   put: (p, body) => request(p, { method: 'PUT', body }),
   del: (p) => request(p, { method: 'DELETE' }),
+  // Upload a single file (FormData). No Content-Type header — browser sets it with boundary.
+  upload: async (p, formData) => {
+    const res = await fetch(p, { method: 'POST', credentials: 'include', body: formData });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(data?.error || `Upload failed (${res.status})`);
+    return data;
+  },
 };

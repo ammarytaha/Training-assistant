@@ -11,6 +11,7 @@ const exerciseSchema = new Schema(
     sets: { type: Number, default: 3, min: 0, max: 30 },
     info: { type: String, default: '' }, // coaching cues
     videoUrl: { type: String, default: '' }, // YouTube link only
+    photos: { type: [String], default: [] }, // uploaded photo URLs
   },
   { _id: false }
 );

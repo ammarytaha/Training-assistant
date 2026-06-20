@@ -8,14 +8,21 @@ import ChatThread from '../components/ChatThread';
 import ExerciseHistory from '../components/ExerciseHistory';
 import NotificationBell from '../components/NotificationBell';
 import InviteModal from '../components/InviteModal';
+import ThemeToggle from '../components/ThemeToggle';
+import LanguageToggle from '../components/LanguageToggle';
+import NutritionPlanEditor from '../components/NutritionPlanEditor';
+import MealLibraryPage from '../components/MealLibraryPage';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function CoachDashboard() {
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const [trainees, setTrainees] = useState([]);
   const [unread, setUnread] = useState({});
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
+  const [mainTab, setMainTab] = useState('trainees'); // 'trainees' | 'mealLibrary'
 
   async function loadTrainees() {
     const [data, unreadData] = await Promise.all([
@@ -27,23 +34,21 @@ export default function CoachDashboard() {
     setLoading(false);
   }
 
-  useEffect(() => {
-    loadTrainees();
-  }, []);
+  useEffect(() => { loadTrainees(); }, []);
 
   if (loading) {
-    return <div className="min-h-screen grid place-items-center text-text-mid font-mono text-sm animate-pulse">Loading…</div>;
+    return <div className="min-h-screen grid place-items-center text-text-mid font-mono text-sm animate-pulse">{t('loading')}</div>;
   }
 
   if (selected) {
     return <TraineeManager trainee={selected} onBack={() => setSelected(null)} />;
   }
 
-  const needAttention = trainees.filter((t) => t.needsAttention).length;
+  const needAttention = trainees.filter((tr) => tr.needsAttention).length;
 
   return (
     <div className="max-w-app mx-auto px-4 sm:px-5 pt-5 pb-16">
-      <header className="flex justify-between items-center mb-8 pb-4 border-b border-border">
+      <header className="flex justify-between items-center mb-6 pb-4 border-b border-border">
         <div>
           <div className="font-black text-2xl tracking-tight leading-none">
             COACH<span className="text-warm">.</span>
@@ -52,40 +57,65 @@ export default function CoachDashboard() {
         </div>
         <div className="flex items-center gap-2.5">
           <NotificationBell />
+          <LanguageToggle />
+          <ThemeToggle />
           <button
             onClick={() => setShowInvite(true)}
             className="bg-accent text-bg font-bold rounded-lg px-3.5 py-2 text-sm"
           >
-            + Invite
+            {t('inviteBtn')}
           </button>
-          <button onClick={logout} className="text-xs text-text-dim hover:text-text">Log out</button>
+          <button onClick={logout} className="text-xs text-text-dim hover:text-text">{t('logout')}</button>
         </div>
       </header>
 
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[11px] uppercase tracking-widest text-text-mid">
-          Your Trainees · {trainees.length}
-        </div>
-        {needAttention > 0 && (
-          <div className="text-[11px] font-semibold text-warm">{needAttention} need attention</div>
-        )}
+      {/* Top-level tabs: Trainees | Meal Library */}
+      <div className="flex gap-1.5 bg-surface border border-border rounded-lg p-1 mb-6">
+        {[['trainees', t('tab_trainees')], ['mealLibrary', t('tab_mealLibrary')]].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setMainTab(key)}
+            className={`flex-1 py-2.5 rounded-md text-sm font-bold transition-colors ${
+              mainTab === key ? 'bg-warm text-bg' : 'text-text-mid hover:text-text'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {trainees.length === 0 ? (
-        <div className="text-center py-12 bg-surface border border-border rounded-xl">
-          <div className="text-3xl mb-3">🤝</div>
-          <div className="font-bold mb-1">No trainees yet</div>
-          <p className="text-text-mid text-sm mb-5 px-6">Share your invite link and clients who sign up will appear here automatically.</p>
-          <button onClick={() => setShowInvite(true)} className="bg-accent text-bg font-bold rounded-lg px-5 py-2.5 text-sm">
-            Get your invite link
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          {trainees.map((t) => (
-            <TraineeCard key={t._id} trainee={t} unread={unread[t._id] || 0} onClick={() => setSelected({ ...t, id: t._id })} />
-          ))}
-        </div>
+      {/* ── Meal Library tab ─────────────────────────────────────────── */}
+      {mainTab === 'mealLibrary' && <MealLibraryPage />}
+
+      {/* ── Trainees tab ─────────────────────────────────────────────── */}
+      {mainTab === 'trainees' && (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[11px] uppercase tracking-widest text-text-mid">
+              {t('yourTraineesCount')(trainees.length)}
+            </div>
+            {needAttention > 0 && (
+              <div className="text-[11px] font-semibold text-warm">{t('needAttentionCount')(needAttention)}</div>
+            )}
+          </div>
+
+          {trainees.length === 0 ? (
+            <div className="text-center py-12 bg-surface border border-border rounded-xl">
+              <div className="text-3xl mb-3">🤝</div>
+              <div className="font-bold mb-1">{t('noTraineesYet')}</div>
+              <p className="text-text-mid text-sm mb-5 px-6">{t('noTraineesDesc')}</p>
+              <button onClick={() => setShowInvite(true)} className="bg-accent text-bg font-bold rounded-lg px-5 py-2.5 text-sm">
+                {t('getInviteLink')}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {trainees.map((tr) => (
+                <TraineeCard key={tr._id} trainee={tr} unread={unread[tr._id] || 0} onClick={() => setSelected({ ...tr, id: tr._id })} t={t} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {showInvite && <InviteModal onClose={() => setShowInvite(false)} />}
@@ -93,25 +123,31 @@ export default function CoachDashboard() {
   );
 }
 
-function TraineeCard({ trainee: t, unread, onClick }) {
-  const lastLabel = t.lastSession ? `${t.daysSince === 0 ? 'today' : t.daysSince === 1 ? 'yesterday' : `${t.daysSince}d ago`}` : 'never trained';
+function TraineeCard({ trainee: tr, unread, onClick, t }) {
+  const lastLabel = tr.lastSession
+    ? tr.daysSince === 0 ? t('today') : tr.daysSince === 1 ? t('yesterday') : t('daysAgo')(tr.daysSince)
+    : t('neverTrained');
   return (
     <button
       onClick={onClick}
       className={`w-full text-left bg-surface border rounded-xl p-4 hover:border-border-strong transition-colors ${
-        t.needsAttention ? 'border-warm/50' : 'border-border'
+        tr.needsAttention ? 'border-warm/50' : 'border-border'
       }`}
     >
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-surface-2 border border-border-strong grid place-items-center font-bold text-accent shrink-0">
-          {t.name?.[0]?.toUpperCase() || '?'}
+          {tr.name?.[0]?.toUpperCase() || '?'}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-bold truncate">{t.name}</span>
-            {t.needsAttention && <span className="text-[9px] uppercase tracking-wide font-bold text-warm bg-warm/10 border border-warm/30 rounded px-1.5 py-0.5 shrink-0">Attention</span>}
+            <span className="font-bold truncate">{tr.name}</span>
+            {tr.needsAttention && (
+              <span className="text-[9px] uppercase tracking-wide font-bold text-warm bg-warm/10 border border-warm/30 rounded px-1.5 py-0.5 shrink-0">
+                {t('attention')}
+              </span>
+            )}
           </div>
-          <div className="text-xs text-text-mid truncate">{t.email}</div>
+          <div className="text-xs text-text-mid truncate">{tr.email}</div>
         </div>
         {unread > 0 && (
           <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-warm text-bg text-[11px] font-bold grid place-items-center shrink-0">
@@ -122,19 +158,18 @@ function TraineeCard({ trainee: t, unread, onClick }) {
       </div>
 
       <div className="grid grid-cols-3 gap-2 mt-3.5 pt-3 border-t border-border">
-        <Stat value={`${t.streak}🔥`} label="streak" />
-        <Stat value={`${t.completionRate}%`} label="completion" />
-        <Stat value={lastLabel} label="last session" small />
+        <Stat value={`${tr.streak}🔥`} label={t('streakLabel')} />
+        <Stat value={`${tr.completionRate}%`} label={t('completionLabel')} />
+        <Stat value={lastLabel} label={t('lastSession')} small />
       </div>
 
       <div className="mt-3 text-xs">
-        {t.todayWorkout ? (
-          <span className={t.todayDone ? 'text-accent' : 'text-text-mid'}>
-            {t.todayDone ? '✓ Done today: ' : 'Today: '}
-            <span className="font-semibold">{t.todayWorkout}</span>
+        {tr.todayWorkout ? (
+          <span className={tr.todayDone ? 'text-accent' : 'text-text-mid'}>
+            {tr.todayDone ? t('donePrefix') : t('todayPrefix')} <span className="font-semibold">{tr.todayWorkout}</span>
           </span>
         ) : (
-          <span className="text-text-dim">Rest day today</span>
+          <span className="text-text-dim">{t('restDayToday')}</span>
         )}
       </div>
     </button>
@@ -152,6 +187,7 @@ function Stat({ value, label, small }) {
 
 // ─── Manager for one trainee ────────────────────────────────────────
 function TraineeManager({ trainee, onBack }) {
+  const { t } = useLanguage();
   const [tab, setTab] = useState('calendar');
   const [templates, setTemplates] = useState([]);
 
@@ -159,21 +195,20 @@ function TraineeManager({ trainee, onBack }) {
     const data = await api.get('/api/coach/templates');
     setTemplates(data.templates);
   }
-  useEffect(() => {
-    loadTemplates();
-  }, []);
+  useEffect(() => { loadTemplates(); }, []);
 
   const tabs = [
-    ['calendar', 'Calendar'],
-    ['templates', 'Templates'],
-    ['skills', 'Skills'],
-    ['progress', 'Progress'],
-    ['chat', 'Chat'],
+    ['calendar', t('tab_calendar')],
+    ['templates', t('tab_templates')],
+    ['nutrition', t('tab_nutrition')],
+    ['skills', t('tab_skills')],
+    ['progress', t('tab_progress')],
+    ['chat', t('tab_chat')],
   ];
 
   return (
     <div className="max-w-app mx-auto px-4 sm:px-5 pt-5 pb-16">
-      <button onClick={onBack} className="text-text-mid hover:text-text text-sm py-2 mb-3">← All trainees</button>
+      <button onClick={onBack} className="text-text-mid hover:text-text text-sm py-2 mb-3">← {t('tab_trainees')}</button>
       <div className="mb-5 pb-4 border-b border-border">
         <h1 className="text-3xl font-black tracking-tight leading-none mb-1">{trainee.name}</h1>
         <div className="text-xs text-text-mid">{trainee.email}</div>
@@ -195,6 +230,7 @@ function TraineeManager({ trainee, onBack }) {
 
       {tab === 'calendar' && <CalendarTab trainee={trainee} templates={templates} />}
       {tab === 'templates' && <TemplatesTab templates={templates} reload={loadTemplates} />}
+      {tab === 'nutrition' && <NutritionPlanEditor traineeId={trainee.id} traineeName={trainee.name} />}
       {tab === 'skills' && <SkillsTab trainee={trainee} />}
       {tab === 'progress' && <ProgressTab trainee={trainee} />}
       {tab === 'chat' && <ChatThread otherId={trainee.id} title={trainee.name} />}
@@ -204,6 +240,7 @@ function TraineeManager({ trainee, onBack }) {
 
 // ─── Calendar tab ───────────────────────────────────────────────────
 function CalendarTab({ trainee, templates }) {
+  const { t } = useLanguage();
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -224,10 +261,7 @@ function CalendarTab({ trainee, templates }) {
     setSchedule(data.schedule);
     setDoneSet(new Set(data.sessions.map((s) => s.date)));
   }
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthBounds.from]);
+  useEffect(() => { load(); }, [monthBounds.from]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const byDate = useMemo(() => Object.fromEntries(schedule.map((w) => [w.date, w])), [schedule]);
 
@@ -246,19 +280,17 @@ function CalendarTab({ trainee, templates }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="text-text-mid hover:text-text px-2 py-1">‹ Prev</button>
+        <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="text-text-mid hover:text-text px-2 py-1">{t('prevMonth')}</button>
         <div className="font-extrabold">{monthLabel}</div>
-        <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="text-text-mid hover:text-text px-2 py-1">Next ›</button>
+        <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="text-text-mid hover:text-text px-2 py-1">{t('nextMonth')}</button>
       </div>
 
       <button onClick={() => setShowRepeat(true)} className="w-full mb-4 py-2.5 rounded-lg border border-warm/50 text-warm text-sm font-semibold hover:bg-warm/10">
-        ↻ Fill month — repeat on weekdays
+        {t('fillMonthBtn')}
       </button>
 
       <div className="grid grid-cols-7 gap-1 mb-1 text-[10px] uppercase text-text-dim text-center">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-          <div key={i}>{d}</div>
-        ))}
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i}>{d}</div>)}
       </div>
       <div className="grid grid-cols-7 gap-1 mb-5">
         {cells.map((d, i) => {
@@ -285,26 +317,16 @@ function CalendarTab({ trainee, templates }) {
 
       {selectedDate && (
         <DayEditor
-          trainee={trainee}
-          date={selectedDate}
-          workout={selectedWorkout}
-          templates={templates}
-          onClose={() => setSelectedDate(null)}
-          onChanged={load}
+          trainee={trainee} date={selectedDate} workout={selectedWorkout}
+          templates={templates} onClose={() => setSelectedDate(null)} onChanged={load}
         />
       )}
-
       {showRepeat && (
         <RepeatModal
-          trainee={trainee}
-          templates={templates}
-          defaultFrom={monthBounds.from}
-          defaultTo={monthBounds.to}
+          trainee={trainee} templates={templates}
+          defaultFrom={monthBounds.from} defaultTo={monthBounds.to}
           onClose={() => setShowRepeat(false)}
-          onDone={() => {
-            setShowRepeat(false);
-            load();
-          }}
+          onDone={() => { setShowRepeat(false); load(); }}
         />
       )}
     </div>
@@ -312,98 +334,67 @@ function CalendarTab({ trainee, templates }) {
 }
 
 function DayEditor({ trainee, date, workout, templates, onClose, onChanged }) {
-  const [mode, setMode] = useState('view'); // 'view' | 'edit' | 'custom'
+  const { t } = useLanguage();
+  const [mode, setMode] = useState('view');
   const [templateId, setTemplateId] = useState(templates[0]?._id || '');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
   async function assignTemplate() {
     if (!templateId) return;
-    setSaving(true);
-    setErr('');
-    try {
-      await api.post(`/api/coach/trainees/${trainee.id}/schedule`, { templateId, dates: [date] });
-      await onChanged();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true); setErr('');
+    try { await api.post(`/api/coach/trainees/${trainee.id}/schedule`, { templateId, dates: [date] }); await onChanged(); }
+    catch (e) { setErr(e.message); } finally { setSaving(false); }
   }
   async function remove() {
-    setSaving(true);
-    setErr('');
-    try {
-      await api.del(`/api/coach/schedule/${workout._id}`);
-      await onChanged();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true); setErr('');
+    try { await api.del(`/api/coach/schedule/${workout._id}`); await onChanged(); }
+    catch (e) { setErr(e.message); } finally { setSaving(false); }
   }
   async function saveEdit(data) {
-    setSaving(true);
-    setErr('');
-    try {
-      await api.put(`/api/coach/schedule/${workout._id}`, data);
-      setMode('view');
-      await onChanged();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true); setErr('');
+    try { await api.put(`/api/coach/schedule/${workout._id}`, data); setMode('view'); await onChanged(); }
+    catch (e) { setErr(e.message); } finally { setSaving(false); }
   }
   async function saveCustom(data) {
-    setSaving(true);
-    setErr('');
-    try {
-      await api.post(`/api/coach/trainees/${trainee.id}/schedule`, { workout: data, dates: [date] });
-      setMode('view');
-      await onChanged();
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setSaving(false);
-    }
+    setSaving(true); setErr('');
+    try { await api.post(`/api/coach/trainees/${trainee.id}/schedule`, { workout: data, dates: [date] }); setMode('view'); await onChanged(); }
+    catch (e) { setErr(e.message); } finally { setSaving(false); }
   }
 
   return (
     <div className="bg-surface border border-warm/50 rounded-xl p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="font-bold">{formatDate(date)}</div>
-        <button onClick={onClose} className="text-text-mid text-sm">Close ✕</button>
+        <button onClick={onClose} className="text-text-mid text-sm">{t('close')} ✕</button>
       </div>
       {err && <div className="mb-3 text-xs text-danger bg-danger/10 border border-danger/30 rounded px-3 py-2">{err}</div>}
 
       {mode === 'edit' && workout ? (
-        <WorkoutEditor initial={workout} onSave={saveEdit} onCancel={() => setMode('view')} saving={saving} submitLabel="Save day" />
+        <WorkoutEditor initial={workout} onSave={saveEdit} onCancel={() => setMode('view')} saving={saving} submitLabel={t('saveDay')} />
       ) : mode === 'custom' ? (
-        <WorkoutEditor initial={{ exercises: [] }} onSave={saveCustom} onCancel={() => setMode('view')} saving={saving} submitLabel="Assign custom" />
+        <WorkoutEditor initial={{ exercises: [] }} onSave={saveCustom} onCancel={() => setMode('view')} saving={saving} submitLabel={t('assignCustom')} />
       ) : workout ? (
         <div>
           <div className="text-xl font-extrabold">{workout.name}</div>
           {workout.tag && <div className="text-xs text-accent uppercase tracking-wide mb-2">{workout.tag}</div>}
           <div className="text-xs text-text-mid mb-3">{workout.exercises.map((e) => e.name).join(' · ')}</div>
           <div className="flex gap-2">
-            <button onClick={() => setMode('edit')} className="flex-1 py-2.5 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">Edit this day</button>
-            <button onClick={remove} disabled={saving} className="py-2.5 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">Remove</button>
+            <button onClick={() => setMode('edit')} className="flex-1 py-2.5 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">{t('editThisDay')}</button>
+            <button onClick={remove} disabled={saving} className="py-2.5 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">{t('remove')}</button>
           </div>
         </div>
       ) : (
         <div>
-          <div className="text-sm text-text-mid mb-3">No workout scheduled. Assign one:</div>
+          <div className="text-sm text-text-mid mb-3">{t('noWorkoutDay')}</div>
           <div className="flex gap-2 mb-2">
             <select className="field !py-2.5 !text-sm flex-1" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-              {templates.map((t) => (
-                <option key={t._id} value={t._id}>{t.name}</option>
-              ))}
+              {templates.map((tp) => <option key={tp._id} value={tp._id}>{tp.name}</option>)}
             </select>
-            <button onClick={assignTemplate} disabled={saving || !templateId} className="bg-accent text-bg font-bold rounded-lg px-4 text-sm">Assign</button>
+            <button onClick={assignTemplate} disabled={saving || !templateId} className="bg-accent text-bg font-bold rounded-lg px-4 text-sm">{t('assign')}</button>
           </div>
           <button onClick={() => setMode('custom')} className="w-full py-2.5 rounded-lg border border-border-strong text-sm font-semibold text-text-mid hover:text-text">
-            + Build a custom workout for this day
+            {t('buildCustom')}
           </button>
         </div>
       )}
@@ -412,6 +403,7 @@ function DayEditor({ trainee, date, workout, templates, onClose, onChanged }) {
 }
 
 function RepeatModal({ trainee, templates, defaultFrom, defaultTo, onClose, onDone }) {
+  const { t } = useLanguage();
   const [templateId, setTemplateId] = useState(templates[0]?._id || '');
   const [weekdays, setWeekdays] = useState([1, 3, 5]);
   const [from, setFrom] = useState(defaultFrom);
@@ -419,70 +411,55 @@ function RepeatModal({ trainee, templates, defaultFrom, defaultTo, onClose, onDo
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
-  const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  function toggle(i) {
-    setWeekdays((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i]));
-  }
+  const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  function toggle(i) { setWeekdays((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i])); }
 
   async function apply() {
     if (!templateId || weekdays.length === 0) return;
-    setSaving(true);
-    setMsg('');
+    setSaving(true); setMsg('');
     try {
       const res = await api.post(`/api/coach/trainees/${trainee.id}/schedule`, { templateId, weekdays, from, to });
-      setMsg(`Assigned to ${res.assigned} day(s).`);
+      setMsg(t('assignedDays')(res.assigned));
       setTimeout(onDone, 700);
-    } catch (err) {
-      setMsg(err.message);
-      setSaving(false);
-    }
+    } catch (err) { setMsg(err.message); setSaving(false); }
   }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-5 bg-black/70 backdrop-blur" onClick={onClose}>
       <div className="bg-surface border border-border-strong rounded-2xl p-5 max-w-md w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-xl font-extrabold mb-1">Repeat on weekdays</h2>
-        <p className="text-xs text-text-mid mb-4">Pick a workout, the weekdays, and a date range. Every matching day gets assigned.</p>
+        <h2 className="text-xl font-extrabold mb-1">{t('repeatOnWeekdays')}</h2>
+        <p className="text-xs text-text-mid mb-4">{t('repeatDesc')}</p>
 
-        <label className="label">Workout</label>
+        <label className="label">{t('workoutLabel')}</label>
         <select className="field !py-2.5 !text-sm mb-4" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-          {templates.map((t) => (
-            <option key={t._id} value={t._id}>{t.name}</option>
-          ))}
+          {templates.map((tp) => <option key={tp._id} value={tp._id}>{tp.name}</option>)}
         </select>
 
-        <label className="label">Weekdays</label>
+        <label className="label">{t('weekdaysLabel')}</label>
         <div className="flex gap-1.5 mb-4">
           {labels.map((l, i) => (
-            <button
-              key={i}
-              onClick={() => toggle(i)}
-              className={`flex-1 py-2 rounded-md text-xs font-bold border ${
-                weekdays.includes(i) ? 'bg-accent text-bg border-accent' : 'bg-surface-2 border-border text-text-mid'
-              }`}
-            >
-              {l[0]}
-            </button>
+            <button key={i} onClick={() => toggle(i)}
+              className={`flex-1 py-2 rounded-md text-xs font-bold border ${weekdays.includes(i) ? 'bg-accent text-bg border-accent' : 'bg-surface-2 border-border text-text-mid'}`}
+            >{l}</button>
           ))}
         </div>
 
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div>
-            <label className="label">From</label>
+            <label className="label">{t('fromLabel')}</label>
             <input type="date" className="field !py-2.5 !text-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
           </div>
           <div>
-            <label className="label">To</label>
+            <label className="label">{t('toLabel')}</label>
             <input type="date" className="field !py-2.5 !text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
         </div>
 
         {msg && <div className="text-xs text-accent mb-3">{msg}</div>}
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 border border-border-strong rounded-lg text-sm font-semibold text-text-mid">Cancel</button>
+          <button onClick={onClose} className="flex-1 py-3 border border-border-strong rounded-lg text-sm font-semibold text-text-mid">{t('cancel')}</button>
           <button onClick={apply} disabled={saving || !templateId || weekdays.length === 0} className="flex-1 btn-accent !py-3">
-            {saving ? 'Assigning…' : 'Assign'}
+            {saving ? t('assigning') : t('assign')}
           </button>
         </div>
       </div>
@@ -492,6 +469,7 @@ function RepeatModal({ trainee, templates, defaultFrom, defaultTo, onClose, onDo
 
 // ─── Templates tab ──────────────────────────────────────────────────
 function TemplatesTab({ templates, reload }) {
+  const { t } = useLanguage();
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -502,46 +480,35 @@ function TemplatesTab({ templates, reload }) {
       else await api.put(`/api/coach/templates/${editing._id}`, data);
       setEditing(null);
       await reload();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
-  async function remove(id) {
-    await api.del(`/api/coach/templates/${id}`);
-    await reload();
-  }
+  async function remove(id) { await api.del(`/api/coach/templates/${id}`); await reload(); }
 
   if (editing) {
     return (
       <div>
-        <div className="font-bold mb-3">{editing === 'new' ? 'New template' : `Edit: ${editing.name}`}</div>
-        <WorkoutEditor
-          initial={editing === 'new' ? { exercises: [] } : editing}
-          onSave={save}
-          onCancel={() => setEditing(null)}
-          saving={saving}
-          submitLabel="Save template"
-        />
+        <div className="font-bold mb-3">{editing === 'new' ? t('newTemplateLabel') : t('editingLabel')(editing.name)}</div>
+        <WorkoutEditor initial={editing === 'new' ? { exercises: [] } : editing} onSave={save} onCancel={() => setEditing(null)} saving={saving} submitLabel={t('saveTemplate')} />
       </div>
     );
   }
 
   return (
     <div>
-      <button onClick={() => setEditing('new')} className="w-full mb-4 py-2.5 rounded-lg bg-accent text-bg font-bold text-sm">+ New template</button>
+      <button onClick={() => setEditing('new')} className="w-full mb-4 py-2.5 rounded-lg bg-accent text-bg font-bold text-sm">{t('newTemplate')}</button>
       <div className="space-y-2.5">
-        {templates.map((t) => (
-          <div key={t._id} className="bg-surface border border-border rounded-xl p-4">
+        {templates.map((tp) => (
+          <div key={tp._id} className="bg-surface border border-border rounded-xl p-4">
             <div className="flex items-start justify-between">
               <div>
-                <div className="font-extrabold">{t.name}</div>
-                {t.tag && <div className="text-[10px] uppercase tracking-wide text-accent">{t.tag}</div>}
-                <div className="text-xs text-text-mid mt-1">{t.exercises.map((e) => e.name).join(' · ') || 'No exercises'}</div>
+                <div className="font-extrabold">{tp.name}</div>
+                {tp.tag && <div className="text-[10px] uppercase tracking-wide text-accent">{tp.tag}</div>}
+                <div className="text-xs text-text-mid mt-1">{tp.exercises.map((e) => e.name).join(' · ') || t('noExercisesLabel')}</div>
               </div>
             </div>
             <div className="flex gap-2 mt-3">
-              <button onClick={() => setEditing(t)} className="flex-1 py-2 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">Edit</button>
-              <button onClick={() => remove(t._id)} className="py-2 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">Delete</button>
+              <button onClick={() => setEditing(tp)} className="flex-1 py-2 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">{t('edit')}</button>
+              <button onClick={() => remove(tp._id)} className="py-2 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">{t('delete')}</button>
             </div>
           </div>
         ))}
@@ -550,11 +517,12 @@ function TemplatesTab({ templates, reload }) {
   );
 }
 
-// ─── Skills tab (coach-editable per trainee) ────────────────────────
+// ─── Skills tab ─────────────────────────────────────────────────────
 function SkillsTab({ trainee }) {
+  const { t } = useLanguage();
   const [skills, setSkills] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const [editing, setEditing] = useState(null); // skill object | 'new'
+  const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -562,10 +530,7 @@ function SkillsTab({ trainee }) {
     setSkills(d.skills);
     setLoaded(true);
   }
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainee.id]);
+  useEffect(() => { load(); }, [trainee.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(data) {
     setSaving(true);
@@ -574,36 +539,25 @@ function SkillsTab({ trainee }) {
       else await api.put(`/api/coach/skills/${editing._id}`, data);
       setEditing(null);
       await load();
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
-  async function remove(id) {
-    await api.del(`/api/coach/skills/${id}`);
-    await load();
-  }
+  async function remove(id) { await api.del(`/api/coach/skills/${id}`); await load(); }
 
   if (editing) {
     return (
       <div>
-        <div className="font-bold mb-3">{editing === 'new' ? 'New skill' : `Edit: ${editing.name}`}</div>
-        <SkillForm
-          initial={editing === 'new' ? { steps: [] } : editing}
-          onSave={save}
-          onCancel={() => setEditing(null)}
-          saving={saving}
-          submitLabel="Save skill"
-        />
+        <div className="font-bold mb-3">{editing === 'new' ? t('newSkill') : t('editingLabel')(editing.name)}</div>
+        <SkillForm initial={editing === 'new' ? { steps: [] } : editing} onSave={save} onCancel={() => setEditing(null)} saving={saving} submitLabel={t('saveSkill')} />
       </div>
     );
   }
 
-  if (!loaded) return <div className="text-text-dim text-xs font-mono animate-pulse py-8 text-center">loading skills…</div>;
+  if (!loaded) return <div className="text-text-dim text-xs font-mono animate-pulse py-8 text-center">{t('loadingSkills')}</div>;
 
   return (
     <div>
-      <p className="text-xs text-text-mid mb-3">These are the progressions {trainee.name.split(' ')[0]} works on. Add or edit skills and steps — they update live in their app.</p>
-      <button onClick={() => setEditing('new')} className="w-full mb-4 py-2.5 rounded-lg bg-accent text-bg font-bold text-sm">+ New skill</button>
+      <p className="text-xs text-text-mid mb-3">{t('skillsDesc')(trainee.name.split(' ')[0])}</p>
+      <button onClick={() => setEditing('new')} className="w-full mb-4 py-2.5 rounded-lg bg-accent text-bg font-bold text-sm">{t('newSkill')}</button>
       <div className="space-y-2.5">
         {skills.map((s) => {
           const done = Math.min(s.currentStep, s.steps.length);
@@ -613,14 +567,12 @@ function SkillsTab({ trainee }) {
                 <span className="text-2xl">{s.icon}</span>
                 <div className="flex-1">
                   <div className="font-extrabold leading-tight">{s.name}</div>
-                  <div className="text-xs text-text-mid mt-0.5">
-                    {s.steps.length} steps · trainee at {done}/{s.steps.length}
-                  </div>
+                  <div className="text-xs text-text-mid mt-0.5">{t('stepsInfo')(s.steps.length, done, s.steps.length)}</div>
                 </div>
               </div>
               <div className="flex gap-2 mt-3">
-                <button onClick={() => setEditing(s)} className="flex-1 py-2 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">Edit</button>
-                <button onClick={() => remove(s._id)} className="py-2 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">Delete</button>
+                <button onClick={() => setEditing(s)} className="flex-1 py-2 rounded-lg bg-surface-2 border border-border-strong text-sm font-semibold">{t('edit')}</button>
+                <button onClick={() => remove(s._id)} className="py-2 px-4 rounded-lg border border-danger/50 text-danger text-sm font-semibold">{t('delete')}</button>
               </div>
             </div>
           );
@@ -630,24 +582,25 @@ function SkillsTab({ trainee }) {
   );
 }
 
-// ─── Progress tab (exercise history + session notes) ────────────────
+// ─── Progress tab ────────────────────────────────────────────────────
 function ProgressTab({ trainee }) {
+  const { t } = useLanguage();
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Exercise History</div>
+        <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('exerciseHistory')}</div>
         <ExerciseHistory endpoint={`/api/coach/trainees/${trainee.id}/exercises`} />
       </div>
       <div>
-        <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Session Notes</div>
+        <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('sessionNotes')}</div>
         <NotesTab trainee={trainee} />
       </div>
     </div>
   );
 }
 
-// ─── Notes ──────────────────────────────────────────────────────────
 function NotesTab({ trainee }) {
+  const { t } = useLanguage();
   const [sessions, setSessions] = useState([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -659,35 +612,31 @@ function NotesTab({ trainee }) {
     })();
   }, [trainee.id]);
 
-  if (!loaded) return <div className="text-text-dim text-xs font-mono animate-pulse py-8 text-center">loading…</div>;
-  if (sessions.length === 0) return <div className="text-text-dim text-sm italic text-center py-10">No logged sessions yet.</div>;
+  if (!loaded) return <div className="text-text-dim text-xs font-mono animate-pulse py-8 text-center">{t('loading')}</div>;
+  if (sessions.length === 0) return <div className="text-text-dim text-sm italic text-center py-10">{t('noLoggedSessions')}</div>;
 
   return (
     <div className="space-y-2">
-      {sessions.map((s) => (
-        <SessionNote key={s._id} session={s} />
-      ))}
+      {sessions.map((s) => <SessionNote key={s._id} session={s} />)}
     </div>
   );
 }
 
 function SessionNote({ session }) {
+  const { t } = useLanguage();
   const [note, setNote] = useState(session.coachNote || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const dirty = note !== (session.coachNote || '');
 
   async function save() {
-    setSaving(true);
-    setSaved(false);
+    setSaving(true); setSaved(false);
     try {
       await api.put(`/api/coach/sessions/${session._id}/note`, { coachNote: note });
       session.coachNote = note;
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   return (
@@ -698,18 +647,11 @@ function SessionNote({ session }) {
           {formatDate(session.date)} · <span className="text-accent">{session.setsCompleted}/{session.setsTotal}</span>
         </div>
       </div>
-      <textarea
-        rows={2}
-        className="field !py-2 !text-sm resize-none"
-        placeholder="Leave a note for this session…"
-        value={note}
-        onChange={(e) => setNote(e.target.value)}
-        maxLength={1000}
-      />
+      <textarea rows={2} className="field !py-2 !text-sm resize-none" placeholder={t('leaveNoteHint')} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} />
       <div className="flex items-center justify-end gap-3 mt-2">
-        {saved && <span className="text-xs text-accent">Saved ✓</span>}
+        {saved && <span className="text-xs text-accent">{t('savedNote')}</span>}
         <button onClick={save} disabled={!dirty || saving} className="text-xs font-semibold uppercase tracking-wider px-3 py-1.5 rounded border border-border-strong text-text-mid hover:text-text disabled:opacity-40">
-          {saving ? 'Saving…' : 'Save note'}
+          {saving ? t('saving') : t('saveNote')}
         </button>
       </div>
     </div>

@@ -35,6 +35,7 @@ function normalizeExercises(exercises) {
       sets: Math.max(0, Math.min(30, Number(ex.sets) || 0)),
       info: (ex.info || '').toString().slice(0, 2000),
       videoUrl: (ex.videoUrl || '').toString().slice(0, 500),
+      photos: Array.isArray(ex.photos) ? ex.photos.filter((p) => typeof p === 'string').slice(0, 10) : [],
     };
   });
 }

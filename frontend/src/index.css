@@ -2,6 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── RTL (Arabic) layout fixes ──────────────────────────────────────────── */
+:root[dir="rtl"] {
+  font-family: 'Segoe UI', 'Arial', 'Tahoma', sans-serif;
+}
+/* Flip flex rows so logo stays on the logical "start" side */
+:root[dir="rtl"] .rtl-flip {
+  flex-direction: row-reverse;
+}
+/* Nudge border-left coach notes to border-right */
+:root[dir="rtl"] .border-l-2 {
+  border-left-width: 0;
+  border-right-width: 2px;
+}
+:root[dir="rtl"] .rounded-r {
+  border-radius: 0 0 0 0.25rem;
+  border-top-left-radius: 0.25rem;
+  border-bottom-left-radius: 0.25rem;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Macro stacked bar – keep left-to-right visually in RTL so order matches labels */
+:root[dir="rtl"] .macro-bar {
+  direction: ltr;
+}
+
+/* ─── Theme palette (dark default, light on :root.light) ─────────────────── */
+/* Values are bare RGB triples so Tailwind opacity modifiers work:            */
+/* e.g. bg-accent/5 → background: rgb(var(--color-accent) / 0.05)           */
+:root {
+  /* Dark theme */
+  --color-bg:            10 10 10;
+  --color-surface:       20 20 20;
+  --color-surface-2:     28 28 28;
+  --color-border:        35 35 35;
+  --color-border-strong: 51 51 51;
+  --color-text:          250 250 250;
+  --color-text-mid:      136 136 136;
+  --color-text-dim:      85 85 85;
+  --color-accent:        215 255 80;
+  --color-accent-dim:    95 122 26;
+  --color-warm:          255 123 71;
+  --color-danger:        231 76 60;
+}
+
+:root.light {
+  /* Light theme */
+  --color-bg:            255 255 255;
+  --color-surface:       245 245 245;
+  --color-surface-2:     235 235 235;
+  --color-border:        224 224 224;
+  --color-border-strong: 204 204 204;
+  --color-text:          17 17 17;
+  --color-text-mid:      85 85 85;
+  --color-text-dim:      153 153 153;
+  --color-accent:        74 120 0;
+  --color-accent-dim:    215 255 80;
+  --color-warm:          200 75 20;
+  --color-danger:        200 45 35;
+}
+
 @layer base {
   * {
     -webkit-tap-highlight-color: transparent;
@@ -11,6 +71,7 @@
     @apply bg-bg text-text font-sans;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
   /* Custom scrollbar for the chat and lists */
   ::-webkit-scrollbar {

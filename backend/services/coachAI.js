@@ -2,22 +2,16 @@ const OpenAI = require('openai');
 const env = require('../config/env');
 const { SKILLS } = require('../data/skillTree');
 
-// The AI coach runs on Google Gemini via its OpenAI-compatible endpoint, so we
-// use the openai SDK pointed at Gemini's base URL. The key lives only on the
-// server (never the client).
 const client = env.gemini.enabled
   ? new OpenAI({ apiKey: env.gemini.apiKey, baseURL: env.gemini.baseUrl })
   : null;
 
-// Build a system prompt grounded in this trainee's real data so the AI gives
-// specific, context-aware coaching instead of generic advice.
-function buildSystemPrompt({ user, schedule, todayISO, sessions, skills }) {
+function buildSystemPrompt({ user, schedule, todayISO, sessions, skills, nutritionPlan }) {
   const recent = (sessions || [])
     .slice(0, 8)
     .map((s) => `- ${s.date} ${s.name || 'workout'}: ${s.setsCompleted}/${s.setsTotal} sets`)
     .join('\n');
 
-  // Today's assignment + the upcoming scheduled workouts.
   const todays = (schedule || []).find((w) => w.date === todayISO);
   const todayLine = todays
     ? `${todays.name} — ${todays.exercises.map((e) => `${e.name} ${e.reps}`).join(', ')}`
@@ -29,7 +23,6 @@ function buildSystemPrompt({ user, schedule, todayISO, sessions, skills }) {
     .map((w) => `- ${w.date}: ${w.name} (${w.exercises.map((e) => e.name).join(', ')})`)
     .join('\n');
 
-  // Bodyweight: latest value + simple trend over the log.
   const bw = [...(user?.bodyweightLog || [])].sort((a, b) => a.date.localeCompare(b.date));
   let weightLine = 'unknown';
   if (bw.length) {
@@ -41,8 +34,7 @@ function buildSystemPrompt({ user, schedule, todayISO, sessions, skills }) {
     }
   }
 
-  // Skill progressions the coach assigned this trainee (per-trainee model).
-  // Falls back to the legacy global tree if the caller didn't pass skills.
+  // Skill progressions
   let skillLines;
   if (Array.isArray(skills)) {
     skillLines = skills
@@ -69,7 +61,36 @@ function buildSystemPrompt({ user, schedule, todayISO, sessions, skills }) {
       .join('\n');
   }
 
-  return `You are an expert calisthenics coach inside a training app. You are coaching ${user?.name || 'a trainee'}. Their coach schedules specific workouts on specific calendar dates.
+  // Nutrition plan summary for context
+  let nutritionLines = 'No nutrition plan assigned yet.';
+  if (nutritionPlan && nutritionPlan.meals && nutritionPlan.meals.length > 0) {
+    const totalMacros = nutritionPlan.meals.reduce(
+      (acc, m) => ({
+        calories: acc.calories + (m.macros?.calories || 0),
+        protein:  acc.protein  + (m.macros?.protein  || 0),
+        carbs:    acc.carbs    + (m.macros?.carbs     || 0),
+        fat:      acc.fat      + (m.macros?.fat       || 0),
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    );
+    const mealList = nutritionPlan.meals
+      .map((m) => {
+        const mac = m.macros || {};
+        const macStr = [
+          mac.calories ? `${mac.calories} kcal` : '',
+          mac.protein  ? `${mac.protein}g protein` : '',
+          mac.carbs    ? `${mac.carbs}g carbs` : '',
+          mac.fat      ? `${mac.fat}g fat` : '',
+        ].filter(Boolean).join(', ');
+        return `- ${m.name} (${m.mealType}${m.time ? `, ${m.time}` : ''})${macStr ? ': ' + macStr : ''}${m.notes ? ' — note: ' + m.notes.slice(0, 120) : ''}`;
+      })
+      .join('\n');
+    nutritionLines = `Plan: "${nutritionPlan.title}"
+Daily totals: ~${Math.round(totalMacros.calories)} kcal, ${Math.round(totalMacros.protein)}g protein, ${Math.round(totalMacros.carbs)}g carbs, ${Math.round(totalMacros.fat)}g fat
+Meals:\n${mealList}${nutritionPlan.notes ? `\nCoach note: ${nutritionPlan.notes.slice(0, 300)}` : ''}`;
+  }
+
+  return `You are an expert calisthenics coach and nutrition advisor inside a training app. You are coaching ${user?.name || 'a trainee'}. Their coach schedules specific workouts and diet plans for them.
 
 TODAY'S WORKOUT (${todayISO}):
 ${todayLine}
@@ -85,19 +106,22 @@ CURRENT BODYWEIGHT: ${weightLine}
 SKILL PROGRESSIONS IN PROGRESS:
 ${skillLines || 'None started yet — you can suggest a skill goal (muscle-up, handstand, planche, front lever, pistol squat).'}
 
+ASSIGNED NUTRITION PLAN:
+${nutritionLines}
+
 HOW TO COACH:
-- Give specific, practical calisthenics advice grounded in their actual data above when relevant.
-- Focus on bodyweight training: progressions, form, programming, recovery, mobility.
+- Give specific, practical advice grounded in their actual data above when relevant.
+- For training: focus on bodyweight progressions, form, programming, recovery, and mobility.
+- For nutrition: help them understand their meal plan, explain macros, answer questions about meal prep and cooking from their plan, and give general dietary advice that supports their training. If no plan is assigned, give sound general nutrition advice for calisthenics athletes.
 - Be encouraging but honest. Keep answers concise and actionable.
-- When you reference an exercise that has a coaching video, you may mention it, but never invent links.
+- When you reference an exercise or meal that has a coaching video, you may mention it, but never invent links.
 
 SAFETY & SCOPE (important):
-- You are NOT a doctor or physical therapist. For pain, injury, or medical concerns, advise seeing a qualified professional — do not diagnose or prescribe treatment.
-- Stay on the topic of calisthenics, fitness, training, nutrition basics, and recovery. Politely decline unrelated requests.
-- Never provide advice that could cause harm (extreme cutting, overtraining through injury, unsafe progressions).`;
+- You are NOT a doctor, registered dietitian, or physical therapist. For medical concerns, injuries, or clinical eating disorders, advise seeing a qualified professional — do not diagnose or prescribe treatment.
+- Stay on the topics of calisthenics, fitness, training, nutrition, meal prep, recovery, and healthy lifestyle. Politely decline unrelated requests.
+- Never provide advice that could cause harm (extreme cutting, overtraining through injury, unsafe progressions). For harmful requests, tell the user to speak with their coach directly via the chat tab.`;
 }
 
-// Generate a coaching reply. `history` is [{role, content}, ...] (oldest first).
 async function generateReply({ context, history }) {
   if (!client) {
     const err = new Error('AI coach is not configured on the server.');
@@ -105,7 +129,6 @@ async function generateReply({ context, history }) {
     throw err;
   }
 
-  // OpenAI takes one messages array; the system prompt is the first message.
   const messages = [
     { role: 'system', content: buildSystemPrompt(context) },
     ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -113,7 +136,7 @@ async function generateReply({ context, history }) {
 
   const response = await client.chat.completions.create({
     model: env.gemini.model,
-    max_tokens: 1024, // concise coaching replies; bump if you want longer answers
+    max_tokens: 1024,
     messages,
   });
 

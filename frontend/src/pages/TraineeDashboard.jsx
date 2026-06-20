@@ -8,16 +8,21 @@ import BodyweightChart from '../components/BodyweightChart';
 import SkillTree from '../components/SkillTree';
 import ExerciseHistory from '../components/ExerciseHistory';
 import ChatThread from '../components/ChatThread';
+import ThemeToggle from '../components/ThemeToggle';
+import LanguageToggle from '../components/LanguageToggle';
+import NutritionPlanView from '../components/NutritionPlanView';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function TraineeDashboard() {
   const { user, logout } = useAuth();
+  const { t } = useLanguage();
   const [schedule, setSchedule] = useState([]);
   const [sessions, setSessions] = useState([]);
-  const [active, setActive] = useState(null); // { workout, date, readOnly }
+  const [active, setActive] = useState(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('train'); // 'train' | 'progress' | 'skills' | 'chat'
+  const [view, setView] = useState('train');
   const [unread, setUnread] = useState(0);
 
   async function load() {
@@ -28,7 +33,6 @@ export default function TraineeDashboard() {
     const future = new Date(today);
     future.setDate(today.getDate() + 28);
     const to = isoFor(future);
-
     const [schedRes, sessRes] = await Promise.all([
       api.get(`/api/schedule/me?from=${from}&to=${to}`),
       api.get('/api/sessions/me'),
@@ -38,45 +42,29 @@ export default function TraineeDashboard() {
     setLoading(false);
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  // Poll unread message count for the Chat tab badge.
   useEffect(() => {
     async function loadUnread() {
-      try {
-        const d = await api.get('/api/messages/unread');
-        setUnread(d.total || 0);
-      } catch {
-        /* ignore */
-      }
+      try { const d = await api.get('/api/messages/unread'); setUnread(d.total || 0); }
+      catch { /* ignore */ }
     }
     loadUnread();
-    const t = setInterval(loadUnread, 15000);
-    return () => clearInterval(t);
+    const tid = setInterval(loadUnread, 15000);
+    return () => clearInterval(tid);
   }, []);
 
-  // Opening the chat marks the thread read, so clear the badge.
-  useEffect(() => {
-    if (view === 'chat') setUnread(0);
-  }, [view]);
+  useEffect(() => { if (view === 'chat') setUnread(0); }, [view]);
 
-  function showToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(''), 2600);
-  }
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2600); }
 
   async function onFinished(complete) {
     setActive(null);
     await load();
-    showToast(complete ? 'WORKOUT LOGGED ✓' : 'PROGRESS SAVED');
+    showToast(complete ? t('workoutLogged') : t('progressSaved'));
   }
 
-  const scheduleByDate = useMemo(
-    () => Object.fromEntries(schedule.map((w) => [w.date, w])),
-    [schedule]
-  );
+  const scheduleByDate = useMemo(() => Object.fromEntries(schedule.map((w) => [w.date, w])), [schedule]);
   const doneDates = useMemo(() => new Set(sessions.map((s) => s.date)), [sessions]);
 
   function openDay(iso) {
@@ -94,14 +82,7 @@ export default function TraineeDashboard() {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
       const iso = isoFor(d);
-      return {
-        label,
-        day: d.getDate(),
-        iso,
-        isToday: iso === todayISO(),
-        scheduled: Boolean(scheduleByDate[iso]),
-        done: doneDates.has(iso),
-      };
+      return { label, day: d.getDate(), iso, isToday: iso === todayISO(), scheduled: Boolean(scheduleByDate[iso]), done: doneDates.has(iso) };
     });
   }, [scheduleByDate, doneDates]);
 
@@ -111,31 +92,20 @@ export default function TraineeDashboard() {
     for (let i = 0; i < 60; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const iso = isoFor(d);
-      if (doneDates.has(iso)) count++;
+      if (doneDates.has(isoFor(d))) count++;
       else if (i > 0) break;
     }
     return count;
   }, [doneDates]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen grid place-items-center text-text-mid font-mono text-sm animate-pulse">
-        Loading your schedule…
-      </div>
-    );
+    return <div className="min-h-screen grid place-items-center text-text-mid font-mono text-sm animate-pulse">{t('loadingSchedule')}</div>;
   }
 
   if (active) {
     return (
       <div className="max-w-app mx-auto px-4 sm:px-5 pt-5">
-        <WorkoutTracker
-          workout={active.workout}
-          date={active.date}
-          readOnly={active.readOnly}
-          onBack={() => setActive(null)}
-          onFinished={onFinished}
-        />
+        <WorkoutTracker workout={active.workout} date={active.date} readOnly={active.readOnly} onBack={() => setActive(null)} onFinished={onFinished} />
       </div>
     );
   }
@@ -154,22 +124,25 @@ export default function TraineeDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <span className="font-mono text-[11px] text-text-mid uppercase tracking-wider">{formatDate(today)}</span>
-          <button onClick={logout} className="text-xs text-text-dim hover:text-text">Log out</button>
+          <LanguageToggle />
+          <ThemeToggle />
+          <button onClick={logout} className="text-xs text-text-dim hover:text-text">{t('logout')}</button>
         </div>
       </header>
 
       {/* Tabs */}
-      <div className="grid grid-cols-4 gap-1.5 bg-surface border border-border rounded-lg p-1 mb-6">
+      <div className="flex gap-1 bg-surface border border-border rounded-lg p-1 mb-6 overflow-x-auto">
         {[
-          ['train', 'Train'],
-          ['progress', 'Progress'],
-          ['skills', 'Skills'],
-          ['chat', 'Chat'],
+          ['train', t('tab_train')],
+          ['nutrition', t('tab_nutrition')],
+          ['progress', t('tab_progress')],
+          ['skills', t('tab_skills')],
+          ['chat', t('tab_chat')],
         ].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setView(key)}
-            className={`relative py-2 rounded-md text-sm font-semibold transition-colors ${
+            className={`relative flex-1 whitespace-nowrap py-2 px-2 rounded-md text-sm font-semibold transition-colors ${
               view === key ? 'bg-accent text-bg' : 'text-text-mid hover:text-text'
             }`}
           >
@@ -183,12 +156,14 @@ export default function TraineeDashboard() {
         ))}
       </div>
 
+      {view === 'nutrition' && <NutritionPlanView />}
+
       {view === 'progress' && (
         <div className="space-y-4">
           <BodyweightChart />
-          <CompletionStats sessions={sessions} />
+          <CompletionStats sessions={sessions} t={t} />
           <div>
-            <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Exercise History</div>
+            <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('exerciseHistory')}</div>
             <ExerciseHistory endpoint="/api/profile/exercises" />
           </div>
         </div>
@@ -196,14 +171,14 @@ export default function TraineeDashboard() {
 
       {view === 'skills' && <SkillTree />}
 
-      {view === 'chat' && <ChatThread otherId={user.coach} title="Your coach" />}
+      {view === 'chat' && <ChatThread otherId={user.coach} title={t('yourCoach')} />}
 
       {view === 'train' && (
         <>
           {/* Week strip */}
           <div className="flex justify-between items-center text-[11px] uppercase tracking-widest text-text-mid mb-3">
-            <span>This Week</span>
-            {streak > 0 && <span className="font-mono text-accent">{streak}-DAY STREAK</span>}
+            <span>{t('thisWeek')}</span>
+            {streak > 0 && <span className="font-mono text-accent">{t('dayStreak')(streak)}</span>}
           </div>
           <div className="grid grid-cols-7 gap-1.5 mb-7">
             {week.map((d) => (
@@ -212,11 +187,7 @@ export default function TraineeDashboard() {
                 onClick={() => openDay(d.iso)}
                 disabled={!d.scheduled}
                 className={`aspect-square rounded-md flex flex-col items-center justify-center gap-0.5 border transition-colors ${
-                  d.done
-                    ? 'bg-accent-dim border-accent'
-                    : d.scheduled
-                    ? 'bg-surface border-accent/50 hover:border-accent'
-                    : 'bg-surface border-border'
+                  d.done ? 'bg-accent-dim border-accent' : d.scheduled ? 'bg-surface border-accent/50 hover:border-accent' : 'bg-surface border-border'
                 } ${d.isToday ? '!border-text' : ''} ${d.scheduled ? 'cursor-pointer' : 'cursor-default'}`}
               >
                 <div className="text-[9px] uppercase text-text-mid tracking-wide">{d.label}</div>
@@ -227,52 +198,44 @@ export default function TraineeDashboard() {
           </div>
 
           {/* Today */}
-          <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Today</div>
+          <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('today')}</div>
           {todaysWorkout ? (
             <button
               onClick={() => openDay(today)}
-              className={`w-full text-left bg-surface border rounded-xl p-5 mb-6 transition-colors ${
-                todayDone ? 'border-accent' : 'border-border hover:border-border-strong'
-              }`}
+              className={`w-full text-left bg-surface border rounded-xl p-5 mb-6 transition-colors ${todayDone ? 'border-accent' : 'border-border hover:border-border-strong'}`}
             >
               <div className="flex justify-between items-baseline mb-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-accent font-semibold">
-                  {todaysWorkout.tag || 'Workout'}
-                </span>
-                {todayDone && <span className="text-[10px] uppercase tracking-widest text-accent font-semibold">✓ Done</span>}
+                <span className="text-[10px] uppercase tracking-widest text-accent font-semibold">{todaysWorkout.tag || 'Workout'}</span>
+                {todayDone && <span className="text-[10px] uppercase tracking-widest text-accent font-semibold">{t('doneToday')}</span>}
               </div>
               <div className="text-2xl font-extrabold tracking-tight leading-tight">{todaysWorkout.name}</div>
-              <div className="text-xs text-text-mid mt-1">
-                {todaysWorkout.exercises.map((e) => e.name).join(' · ')}
-              </div>
+              <div className="text-xs text-text-mid mt-1">{todaysWorkout.exercises.map((e) => e.name).join(' · ')}</div>
               <div className="mt-3 inline-block text-xs font-bold text-bg bg-accent rounded px-3 py-1.5">
-                {todayDone ? 'Review / re-log →' : 'Start workout →'}
+                {todayDone ? t('reviewRelog') : t('startWorkout')}
               </div>
             </button>
           ) : (
             <div className="bg-surface border border-border rounded-xl p-6 mb-6 text-center">
               <div className="text-3xl mb-2">😌</div>
-              <div className="font-bold">Rest day</div>
-              <div className="text-xs text-text-mid mt-1">Nothing scheduled for today. Recover well.</div>
+              <div className="font-bold">{t('restDay')}</div>
+              <div className="text-xs text-text-mid mt-1">{t('restDayNote')}</div>
             </div>
           )}
 
           {/* Upcoming */}
           {upcoming.length > 0 && (
             <div className="mb-6">
-              <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Upcoming</div>
+              <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('upcoming')}</div>
               <div className="space-y-2">
                 {upcoming.map((w) => (
-                  <button
-                    key={w._id}
-                    onClick={() => openDay(w.date)}
+                  <button key={w._id} onClick={() => openDay(w.date)}
                     className="w-full text-left flex justify-between items-center bg-surface border border-border rounded-lg px-4 py-3 hover:border-border-strong"
                   >
                     <div>
                       <div className="font-semibold text-sm">{w.name}</div>
                       <div className="font-mono text-xs text-text-mid">{formatDate(w.date)}</div>
                     </div>
-                    <span className="text-text-dim text-xs">{w.exercises.length} exercises ›</span>
+                    <span className="text-text-dim text-xs">{t('exercisesCount')(w.exercises.length)}</span>
                   </button>
                 ))}
               </div>
@@ -281,11 +244,9 @@ export default function TraineeDashboard() {
 
           {/* Recent sessions */}
           <div className="mt-2">
-            <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">Recent Sessions</div>
+            <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('recentSessions')}</div>
             {recent.length === 0 ? (
-              <div className="text-text-dim text-xs italic text-center py-6">
-                No sessions yet. Your scheduled workouts will appear above.
-              </div>
+              <div className="text-text-dim text-xs italic text-center py-6">{t('noSessionsYet')}</div>
             ) : (
               <div>
                 {recent.map((s) => (
@@ -295,13 +256,11 @@ export default function TraineeDashboard() {
                         <div className="font-semibold text-sm">{s.name || 'Workout'}</div>
                         <div className="font-mono text-xs text-text-mid">{formatDate(s.date)}</div>
                       </div>
-                      <div className="font-mono text-accent font-bold text-sm">
-                        {s.setsCompleted}/{s.setsTotal}
-                      </div>
+                      <div className="font-mono text-accent font-bold text-sm">{s.setsCompleted}/{s.setsTotal}</div>
                     </div>
                     {s.coachNote && (
                       <div className="mt-2 flex gap-2 bg-surface-2/50 border-l-2 border-warm rounded-r px-3 py-2">
-                        <span className="text-warm text-xs shrink-0">Coach</span>
+                        <span className="text-warm text-xs shrink-0">{t('coachNoteLabel')}</span>
                         <p className="text-xs text-text leading-relaxed">{s.coachNote}</p>
                       </div>
                     )}
@@ -318,7 +277,7 @@ export default function TraineeDashboard() {
         onClick={() => setChatOpen(true)}
         className="fixed bottom-6 right-5 z-40 bg-accent text-bg font-extrabold rounded-full px-5 py-3.5 shadow-lg shadow-accent/20 flex items-center gap-2"
       >
-        <span className="text-lg leading-none">✦</span> AI Coach
+        <span className="text-lg leading-none">✦</span> {t('aiCoach')}
       </button>
 
       <AIChat open={chatOpen} onClose={() => setChatOpen(false)} />
@@ -332,19 +291,19 @@ export default function TraineeDashboard() {
   );
 }
 
-function CompletionStats({ sessions }) {
+function CompletionStats({ sessions, t }) {
   const total = sessions.length;
   const setsDone = sessions.reduce((sum, s) => sum + (s.setsCompleted || 0), 0);
   const fullyDone = sessions.filter((s) => s.setsTotal > 0 && s.setsCompleted >= s.setsTotal).length;
   const rate = total ? Math.round((fullyDone / total) * 100) : 0;
   const cards = [
-    ['Sessions', total],
-    ['Sets logged', setsDone],
-    ['Completion', `${rate}%`],
+    [t('sessions'), total],
+    [t('setsLogged'), setsDone],
+    [t('completion'), `${rate}%`],
   ];
   return (
     <div className="bg-surface border border-border rounded-xl p-4">
-      <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">All-time</div>
+      <div className="text-[11px] uppercase tracking-widest text-text-mid mb-3">{t('allTime')}</div>
       <div className="grid grid-cols-3 gap-3">
         {cards.map(([label, value]) => (
           <div key={label} className="text-center">

@@ -14,6 +14,7 @@ const exerciseSchema = new Schema(
     info: { type: String, default: '' },
     // YouTube link only (embedded as URL, never downloaded).
     videoUrl: { type: String, default: '' },
+    photos: { type: [String], default: [] }, // uploaded photo URLs
   },
   { _id: false }
 );

@@ -2,21 +2,18 @@ import { useMemo, useState } from 'react';
 import { api } from '../api';
 import { formatDate } from '../lib/date';
 import ExerciseModal from './ExerciseModal';
+import { useLanguage } from '../contexts/LanguageContext';
 
-// Pull the first number out of a prescribed string ("5 reps" -> "5", "30 sec" -> "30").
 function defaultReps(ex) {
   const m = String(ex.reps || '').match(/\d+/);
   return m ? m[0] : '';
 }
 
-// Renders ONE scheduled workout for a given date and logs the finished session.
-// Trainees record the actual reps they hit per set (prefilled with the
-// prescribed target), which feeds the per-exercise progress history.
-// `readOnly` (future dates) shows the plan without logging.
 export default function WorkoutTracker({ workout, date, readOnly = false, onBack, onFinished }) {
+  const { t } = useLanguage();
   const [info, setInfo] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [reps, setReps] = useState({}); // { exKey: { setIndex: repsValue } }
+  const [reps, setReps] = useState({});
   const [round, setRound] = useState(0);
 
   const totalSets = useMemo(() => {
@@ -34,9 +31,7 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
     return n;
   }, [workout, reps, round]);
 
-  function setRep(exKey, i, val) {
-    setReps((p) => ({ ...p, [exKey]: { ...(p[exKey] || {}), [i]: val } }));
-  }
+  function setRep(exKey, i, val) { setReps((p) => ({ ...p, [exKey]: { ...(p[exKey] || {}), [i]: val } })); }
   function toggleSet(ex, i) {
     const cur = reps[ex.key]?.[i];
     const isDone = cur !== undefined && cur !== '' && Number(cur) > 0;
@@ -46,8 +41,6 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
   async function finish() {
     if (doneSets === 0 || saving || readOnly) return;
     setSaving(true);
-
-    // Build the per-exercise record the history view reads.
     let perExercise;
     if (workout.isSuperset) {
       perExercise = { rounds: round };
@@ -63,37 +56,30 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
         perExercise[ex.key] = { name: ex.name, prescribed: ex.reps || '', reps: arr };
       }
     }
-
     try {
       await api.post('/api/sessions', {
-        date,
-        name: workout.name,
-        scheduledWorkoutId: workout._id,
-        setsCompleted: doneSets,
-        setsTotal: totalSets,
-        perExercise,
+        date, name: workout.name, scheduledWorkoutId: workout._id,
+        setsCompleted: doneSets, setsTotal: totalSets, perExercise,
       });
       onFinished?.(doneSets >= totalSets);
-    } catch {
-      setSaving(false);
-    }
+    } catch { setSaving(false); }
   }
 
   return (
     <div className="pb-28">
       <button onClick={onBack} className="text-text-mid hover:text-text text-sm py-2 mb-4 flex items-center gap-1.5">
-        ← Back
+        ← {t('back')}
       </button>
 
       <div className="mb-6 pb-4 border-b border-border">
         <div className="font-mono text-[11px] text-text-dim tracking-widest mb-1">{formatDate(date)}</div>
         <h1 className="text-4xl font-black tracking-tight leading-none mb-2">{workout.name}</h1>
         {workout.tag && <div className="text-[11px] uppercase tracking-widest text-accent font-semibold">{workout.tag}</div>}
-        {readOnly && <div className="mt-2 text-xs text-warm">Upcoming — preview only. Come back on the day to log it.</div>}
+        {readOnly && <div className="mt-2 text-xs text-warm">{t('upcomingPreview')}</div>}
       </div>
 
       {workout.isSuperset ? (
-        <Superset workout={workout} round={round} setRound={setRound} readOnly={readOnly} />
+        <Superset workout={workout} round={round} setRound={setRound} readOnly={readOnly} t={t} />
       ) : (
         <div className="space-y-2.5">
           {workout.exercises.map((ex) => (
@@ -102,14 +88,10 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
                 <div>
                   <div className="text-[17px] font-bold leading-tight">{ex.name}</div>
                   <div className="font-mono text-[11px] text-text-mid mt-1">
-                    {ex.reps}
-                    {ex.sets ? ` · ${ex.sets} SETS` : ''}
+                    {ex.reps}{ex.sets ? ` · ${ex.sets} ${t('sets').toUpperCase()}` : ''}
                   </div>
                 </div>
-                <button
-                  onClick={() => setInfo(ex)}
-                  className="w-7 h-7 shrink-0 rounded-full bg-surface-2 border border-border-strong text-text-mid italic font-serif font-bold hover:text-accent hover:border-accent"
-                >
+                <button onClick={() => setInfo(ex)} className="w-7 h-7 shrink-0 rounded-full bg-surface-2 border border-border-strong text-text-mid italic font-serif font-bold hover:text-accent hover:border-accent">
                   i
                 </button>
               </div>
@@ -119,33 +101,18 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
                     const val = reps[ex.key]?.[i] ?? '';
                     const done = Number(val) > 0;
                     return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors ${
-                          done ? 'border-accent bg-accent/5' : 'border-border-strong'
-                        }`}
-                      >
-                        <button
-                          onClick={() => toggleSet(ex, i)}
-                          disabled={readOnly}
-                          className={`w-7 h-7 shrink-0 rounded grid place-items-center text-xs font-bold disabled:opacity-50 ${
-                            done ? 'bg-accent text-bg' : 'border border-border-strong text-text-dim'
-                          }`}
-                        >
-                          {done ? '✓' : i + 1}
-                        </button>
-                        <span className="text-xs text-text-mid">Set {i + 1}</span>
+                      <div key={i} className={`flex items-center gap-2.5 rounded-md border px-2.5 py-2 transition-colors ${done ? 'border-accent bg-accent/5' : 'border-border-strong'}`}>
+                        <button onClick={() => toggleSet(ex, i)} disabled={readOnly}
+                          className={`w-7 h-7 shrink-0 rounded grid place-items-center text-xs font-bold disabled:opacity-50 ${done ? 'bg-accent text-bg' : 'border border-border-strong text-text-dim'}`}
+                        >{done ? '✓' : i + 1}</button>
+                        <span className="text-xs text-text-mid">{t('set')} {i + 1}</span>
                         <input
-                          type="number"
-                          inputMode="numeric"
-                          min="0"
-                          disabled={readOnly}
-                          value={val}
-                          onChange={(e) => setRep(ex.key, i, e.target.value)}
+                          type="number" inputMode="numeric" min="0" disabled={readOnly}
+                          value={val} onChange={(e) => setRep(ex.key, i, e.target.value)}
                           placeholder={defaultReps(ex)}
                           className="ml-auto w-16 field !py-1.5 !text-sm text-center disabled:opacity-50"
                         />
-                        <span className="text-xs text-text-dim w-8">reps</span>
+                        <span className="text-xs text-text-dim w-8">{t('reps')}</span>
                       </div>
                     );
                   })}
@@ -159,10 +126,10 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
       {!readOnly && (
         <div className="fixed bottom-0 left-0 right-0 max-w-app mx-auto px-5 pb-6 pt-4 bg-gradient-to-t from-bg via-bg/95 to-transparent">
           <div className="text-center font-mono text-[11px] text-text-mid mb-2.5 tracking-wide">
-            {doneSets} / {totalSets} {workout.isSuperset ? 'rounds' : 'sets'} completed
+            {doneSets} / {totalSets} {workout.isSuperset ? t('rounds') : t('sets')} {t('completed')}
           </div>
           <button onClick={finish} disabled={doneSets === 0 || saving} className="btn-accent">
-            {saving ? 'Saving…' : doneSets >= totalSets ? 'Complete Workout ✓' : 'Finish Workout'}
+            {saving ? t('saving') : doneSets >= totalSets ? t('completeWorkout') : t('finishWorkout')}
           </button>
         </div>
       )}
@@ -172,15 +139,12 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
   );
 }
 
-function Superset({ workout, round, setRound, readOnly }) {
+function Superset({ workout, round, setRound, readOnly, t }) {
   return (
     <>
       <div className="bg-surface border border-accent rounded-xl p-4 mb-4">
-        <div className="text-[10px] uppercase tracking-widest text-accent font-semibold mb-2">How it works</div>
-        <p className="text-sm leading-relaxed">
-          No rest between exercises within a round. Move straight through all {workout.exercises.length} exercises —
-          that's one round. Complete {workout.rounds} rounds; keep rest between rounds short.
-        </p>
+        <div className="text-[10px] uppercase tracking-widest text-accent font-semibold mb-2">{t('howItWorks')}</div>
+        <p className="text-sm leading-relaxed">{t('supersetDesc')(workout.exercises.length, workout.rounds)}</p>
       </div>
 
       <div className="flex gap-2 justify-center mb-4">
@@ -203,7 +167,7 @@ function Superset({ workout, round, setRound, readOnly }) {
         disabled={readOnly || round >= workout.rounds}
         className="btn-accent disabled:opacity-40"
       >
-        {round >= workout.rounds ? 'All Rounds Complete' : `Round Complete → (${round}/${workout.rounds})`}
+        {round >= workout.rounds ? t('allRoundsComplete') : t('roundCompleteOf')(round, workout.rounds)}
       </button>
     </>
   );

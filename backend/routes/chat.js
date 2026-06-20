@@ -6,6 +6,7 @@ const Conversation = require('../models/Conversation');
 const ScheduledWorkout = require('../models/ScheduledWorkout');
 const Session = require('../models/Session');
 const TraineeSkill = require('../models/TraineeSkill');
+const NutritionPlan = require('../models/NutritionPlan');
 const { requireAuth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { generateReply } = require('../services/coachAI');
@@ -45,14 +46,11 @@ router.post(
     try {
       const { message } = req.body;
 
-      // Load (or create) this user's conversation.
       let convo = await Conversation.findOne({ user: req.user._id });
       if (!convo) convo = new Conversation({ user: req.user._id, messages: [] });
 
       convo.messages.push({ role: 'user', content: message });
 
-      // Gather fresh context for a grounded reply: a window of scheduled
-      // workouts around today + recent sessions.
       const now = new Date();
       const iso = (d) => {
         const t = new Date(d);
@@ -61,21 +59,21 @@ router.post(
       const from = iso(new Date(now.getTime() - 7 * 86400000));
       const to = iso(new Date(now.getTime() + 14 * 86400000));
 
-      const [schedule, sessions, skills] = await Promise.all([
+      const [schedule, sessions, skills, nutritionPlan] = await Promise.all([
         ScheduledWorkout.find({ trainee: req.user._id, date: { $gte: from, $lte: to } }).sort({ date: 1 }),
         Session.find({ trainee: req.user._id }).sort({ date: -1 }).limit(8),
         TraineeSkill.find({ trainee: req.user._id }).sort({ order: 1, createdAt: 1 }),
+        NutritionPlan.findOne({ trainee: req.user._id, active: true }),
       ]);
 
       const history = convo.messages.slice(-MAX_HISTORY).map((m) => ({ role: m.role, content: m.content }));
 
       const reply = await generateReply({
-        context: { user: req.user, schedule, todayISO: iso(now), sessions, skills },
+        context: { user: req.user, schedule, todayISO: iso(now), sessions, skills, nutritionPlan },
         history,
       });
 
       convo.messages.push({ role: 'assistant', content: reply });
-      // Trim stored history so the document doesn't grow unbounded.
       if (convo.messages.length > 200) convo.messages = convo.messages.slice(-200);
       await convo.save();
 

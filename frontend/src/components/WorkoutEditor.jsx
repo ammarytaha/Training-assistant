@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { api } from '../api';
 
 // Reusable editor for a workout (template OR a scheduled day). Full exercise
-// CRUD: add, remove, reorder, edit name/reps/sets/info/video. Calls onSave with
-// the assembled workout object.
+// CRUD: add, remove, reorder, edit name/reps/sets/info/video/photos. Calls onSave
+// with the assembled workout object.
 export default function WorkoutEditor({ initial, onSave, onCancel, saving, submitLabel = 'Save' }) {
   const [name, setName] = useState(initial?.name || '');
   const [tag, setTag] = useState(initial?.tag || '');
   const [isSuperset, setIsSuperset] = useState(Boolean(initial?.isSuperset));
   const [rounds, setRounds] = useState(initial?.rounds || 6);
   const [exercises, setExercises] = useState(() =>
-    (initial?.exercises || []).map((e) => ({ ...e, key: e.key || genKey() }))
+    (initial?.exercises || []).map((e) => ({ ...e, key: e.key || genKey(), photos: e.photos || [] }))
   );
 
   function genKey() {
@@ -17,7 +18,7 @@ export default function WorkoutEditor({ initial, onSave, onCancel, saving, submi
   }
 
   function addExercise() {
-    setExercises((prev) => [...prev, { key: genKey(), name: '', reps: '', sets: 3, info: '', videoUrl: '' }]);
+    setExercises((prev) => [...prev, { key: genKey(), name: '', reps: '', sets: 3, info: '', videoUrl: '', photos: [] }]);
   }
   function removeExercise(key) {
     setExercises((prev) => prev.filter((e) => e.key !== key));
@@ -33,7 +34,19 @@ export default function WorkoutEditor({ initial, onSave, onCancel, saving, submi
     });
   }
   function update(key, field, value) {
-    setExercises((prev) => prev.map((e) => (e.key === key ? { ...e, [field]: field === 'sets' ? Number(value) : value } : e)));
+    setExercises((prev) =>
+      prev.map((e) => (e.key === key ? { ...e, [field]: field === 'sets' ? Number(value) : value } : e))
+    );
+  }
+  function addPhoto(key, url) {
+    setExercises((prev) =>
+      prev.map((e) => (e.key === key ? { ...e, photos: [...(e.photos || []), url] } : e))
+    );
+  }
+  function removePhoto(key, url) {
+    setExercises((prev) =>
+      prev.map((e) => (e.key === key ? { ...e, photos: (e.photos || []).filter((p) => p !== url) } : e))
+    );
   }
 
   function submit() {
@@ -121,10 +134,17 @@ export default function WorkoutEditor({ initial, onSave, onCancel, saving, submi
               />
               <textarea
                 rows={2}
-                className="field !py-2 !text-sm resize-none"
+                className="field !py-2 !text-sm resize-none mb-2"
                 placeholder="Form notes / cues (optional)"
                 value={ex.info || ''}
                 onChange={(e) => update(ex.key, 'info', e.target.value)}
+              />
+
+              {/* Photo uploader */}
+              <PhotoUploader
+                photos={ex.photos || []}
+                onAdd={(url) => addPhoto(ex.key, url)}
+                onRemove={(url) => removePhoto(ex.key, url)}
               />
             </div>
           ))}
@@ -141,6 +161,79 @@ export default function WorkoutEditor({ initial, onSave, onCancel, saving, submi
           {saving ? 'Saving…' : submitLabel}
         </button>
       </div>
+    </div>
+  );
+}
+
+function PhotoUploader({ photos, onAdd, onRemove }) {
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (photos.length + files.length > 10) {
+      setError('Max 10 photos per exercise.');
+      return;
+    }
+    setError('');
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('photo', file);
+        const { url } = await api.upload('/api/upload/photo', fd);
+        onAdd(url);
+      }
+    } catch (err) {
+      setError(err.message || 'Upload failed.');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] uppercase tracking-widest text-text-dim">Step photos</span>
+        {photos.length < 10 && (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="text-xs font-semibold text-accent disabled:opacity-50"
+          >
+            {uploading ? 'Uploading…' : '+ Add photos'}
+          </button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleFiles}
+      />
+      {error && <p className="text-danger text-xs mb-1.5">{error}</p>}
+      {photos.length > 0 && (
+        <div className="grid grid-cols-4 gap-1.5">
+          {photos.map((url) => (
+            <div key={url} className="relative group aspect-square rounded-md overflow-hidden border border-border">
+              <img src={url} alt="" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => onRemove(url)}
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-lg"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

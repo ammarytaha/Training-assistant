@@ -21,6 +21,9 @@ const profileRoutes = require('./routes/profile');
 const scheduleRoutes = require('./routes/schedule');
 const messageRoutes = require('./routes/messages');
 const notificationRoutes = require('./routes/notifications');
+const uploadRoutes = require('./routes/upload');
+const nutritionRoutes = require('./routes/nutrition');
+const mealLibraryRoutes = require('./routes/mealLibrary');
 
 const app = express();
 
@@ -41,6 +44,9 @@ app.use(cookieParser());
 app.use(mongoSanitize()); // strip $/. keys -> prevents NoSQL injection
 if (!env.isProd) app.use(morgan('dev'));
 
+// Serve uploaded exercise photos as static files.
+app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
+
 // Passport (OAuth strategies only; stateless)
 configurePassport();
 app.use(passport.initialize());
@@ -58,6 +64,9 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/schedule', scheduleRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/nutrition', nutritionRoutes);
+app.use('/api/coach/meal-library', mealLibraryRoutes);
 
 // ─── 404 + error handling ───────────────────────────────────────────
 app.use(notFound);
