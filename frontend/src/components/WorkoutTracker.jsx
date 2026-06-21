@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { formatDate } from '../lib/date';
 import ExerciseModal from './ExerciseModal';
+import Tx from './Tx';
+import { preTranslate } from '../lib/translator';
 import { useLanguage } from '../contexts/LanguageContext';
 
 function defaultReps(ex) {
@@ -10,8 +12,17 @@ function defaultReps(ex) {
 }
 
 export default function WorkoutTracker({ workout, date, readOnly = false, onBack, onFinished }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [info, setInfo] = useState(null);
+
+  // Pre-translate workout content the moment the tracker opens.
+  useEffect(() => {
+    if (lang !== 'ar') return;
+    preTranslate([
+      workout.name, workout.tag,
+      ...workout.exercises.flatMap((ex) => [ex.name, ex.info]),
+    ].filter(Boolean));
+  }, [lang, workout]);
   const [saving, setSaving] = useState(false);
   const [reps, setReps] = useState({});
   const [round, setRound] = useState(0);
@@ -49,10 +60,7 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
       for (const ex of workout.exercises) {
         const r = reps[ex.key] || {};
         const arr = [];
-        for (let i = 0; i < (ex.sets || 0); i++) {
-          const v = Number(r[i]);
-          if (v > 0) arr.push(v);
-        }
+        for (let i = 0; i < (ex.sets || 0); i++) { const v = Number(r[i]); if (v > 0) arr.push(v); }
         perExercise[ex.key] = { name: ex.name, prescribed: ex.reps || '', reps: arr };
       }
     }
@@ -73,8 +81,8 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
 
       <div className="mb-6 pb-4 border-b border-border">
         <div className="font-mono text-[11px] text-text-dim tracking-widest mb-1">{formatDate(date)}</div>
-        <h1 className="text-4xl font-black tracking-tight leading-none mb-2">{workout.name}</h1>
-        {workout.tag && <div className="text-[11px] uppercase tracking-widest text-accent font-semibold">{workout.tag}</div>}
+        <h1 className="text-4xl font-black tracking-tight leading-none mb-2"><Tx>{workout.name}</Tx></h1>
+        {workout.tag && <div className="text-[11px] uppercase tracking-widest text-accent font-semibold"><Tx>{workout.tag}</Tx></div>}
         {readOnly && <div className="mt-2 text-xs text-warm">{t('upcomingPreview')}</div>}
       </div>
 
@@ -86,7 +94,7 @@ export default function WorkoutTracker({ workout, date, readOnly = false, onBack
             <div key={ex.key} className="bg-surface border border-border rounded-xl p-4">
               <div className="flex justify-between items-start gap-2.5 mb-3.5">
                 <div>
-                  <div className="text-[17px] font-bold leading-tight">{ex.name}</div>
+                  <div className="text-[17px] font-bold leading-tight"><Tx>{ex.name}</Tx></div>
                   <div className="font-mono text-[11px] text-text-mid mt-1">
                     {ex.reps}{ex.sets ? ` · ${ex.sets} ${t('sets').toUpperCase()}` : ''}
                   </div>
@@ -146,22 +154,19 @@ function Superset({ workout, round, setRound, readOnly, t }) {
         <div className="text-[10px] uppercase tracking-widest text-accent font-semibold mb-2">{t('howItWorks')}</div>
         <p className="text-sm leading-relaxed">{t('supersetDesc')(workout.exercises.length, workout.rounds)}</p>
       </div>
-
       <div className="flex gap-2 justify-center mb-4">
         {Array.from({ length: workout.rounds }, (_, i) => (
           <div key={i} className={`w-8 h-1.5 rounded ${i < round ? 'bg-accent' : 'bg-surface-2 border border-border'}`} />
         ))}
       </div>
-
       <div className="space-y-1.5 mb-4">
         {workout.exercises.map((ex) => (
           <div key={ex.key} className="flex justify-between items-center bg-surface border border-border rounded-lg px-3.5 py-3">
-            <div className="font-semibold text-sm">{ex.name}</div>
+            <div className="font-semibold text-sm"><Tx>{ex.name}</Tx></div>
             <div className="font-mono text-xs text-accent font-bold">{ex.reps}</div>
           </div>
         ))}
       </div>
-
       <button
         onClick={() => setRound((r) => Math.min(r + 1, workout.rounds))}
         disabled={readOnly || round >= workout.rounds}

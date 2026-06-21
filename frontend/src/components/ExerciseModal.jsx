@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { preTranslate } from '../lib/translator';
+import Tx from './Tx';
 
 function youtubeId(url) {
   if (!url) return null;
@@ -8,8 +10,15 @@ function youtubeId(url) {
 }
 
 export default function ExerciseModal({ exercise, onClose }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [photoIndex, setPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    if (lang === 'ar' && exercise) {
+      preTranslate([exercise.name, exercise.info].filter(Boolean));
+    }
+  }, [lang, exercise]);
+
   if (!exercise) return null;
 
   const videoId = youtubeId(exercise.videoUrl);
@@ -19,7 +28,7 @@ export default function ExerciseModal({ exercise, onClose }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-5 bg-black/70 backdrop-blur" onClick={onClose}>
       <div className="bg-surface border border-border-strong rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="text-[10px] uppercase tracking-widest text-accent font-semibold mb-1">{t('formNotes')}</div>
-        <h2 className="text-2xl font-extrabold tracking-tight mb-1">{exercise.name}</h2>
+        <h2 className="text-2xl font-extrabold tracking-tight mb-1"><Tx>{exercise.name}</Tx></h2>
         <div className="font-mono text-xs text-text-mid mb-4">
           {exercise.reps}{exercise.sets ? ` · ${exercise.sets} ${t('sets').toUpperCase()}` : ''}
         </div>
@@ -64,7 +73,7 @@ export default function ExerciseModal({ exercise, onClose }) {
         )}
 
         <p className="text-sm leading-relaxed text-text whitespace-pre-wrap">
-          {exercise.info || t('noFormNotes')}
+          <Tx>{exercise.info || t('noFormNotes')}</Tx>
         </p>
 
         <button onClick={onClose} className="w-full mt-5 py-3 bg-transparent border border-border-strong rounded-lg text-sm font-semibold uppercase tracking-wider hover:border-text">

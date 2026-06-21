@@ -11,11 +11,13 @@ import ChatThread from '../components/ChatThread';
 import ThemeToggle from '../components/ThemeToggle';
 import LanguageToggle from '../components/LanguageToggle';
 import NutritionPlanView from '../components/NutritionPlanView';
+import Tx from '../components/Tx';
+import { preTranslate } from '../lib/translator';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function TraineeDashboard() {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [schedule, setSchedule] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [active, setActive] = useState(null);
@@ -37,12 +39,19 @@ export default function TraineeDashboard() {
       api.get(`/api/schedule/me?from=${from}&to=${to}`),
       api.get('/api/sessions/me'),
     ]);
+    if (lang === 'ar') {
+      // Pre-translate all dynamic content during the loading phase.
+      await preTranslate([
+        ...schedRes.schedule.flatMap((w) => [w.name, w.tag, ...w.exercises.map((e) => e.name)]),
+        ...sessRes.sessions.flatMap((s) => [s.name, s.coachNote]),
+      ].filter(Boolean));
+    }
     setSchedule(schedRes.schedule);
     setSessions(sessRes.sessions);
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [lang]);
 
   useEffect(() => {
     async function loadUnread() {
@@ -205,11 +214,11 @@ export default function TraineeDashboard() {
               className={`w-full text-left bg-surface border rounded-xl p-5 mb-6 transition-colors ${todayDone ? 'border-accent' : 'border-border hover:border-border-strong'}`}
             >
               <div className="flex justify-between items-baseline mb-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-accent font-semibold">{todaysWorkout.tag || 'Workout'}</span>
+                <span className="text-[10px] uppercase tracking-widest text-accent font-semibold"><Tx>{todaysWorkout.tag || 'Workout'}</Tx></span>
                 {todayDone && <span className="text-[10px] uppercase tracking-widest text-accent font-semibold">{t('doneToday')}</span>}
               </div>
-              <div className="text-2xl font-extrabold tracking-tight leading-tight">{todaysWorkout.name}</div>
-              <div className="text-xs text-text-mid mt-1">{todaysWorkout.exercises.map((e) => e.name).join(' · ')}</div>
+              <div className="text-2xl font-extrabold tracking-tight leading-tight"><Tx>{todaysWorkout.name}</Tx></div>
+              <div className="text-xs text-text-mid mt-1"><Tx>{todaysWorkout.exercises.map((e) => e.name).join(' · ')}</Tx></div>
               <div className="mt-3 inline-block text-xs font-bold text-bg bg-accent rounded px-3 py-1.5">
                 {todayDone ? t('reviewRelog') : t('startWorkout')}
               </div>
@@ -232,7 +241,7 @@ export default function TraineeDashboard() {
                     className="w-full text-left flex justify-between items-center bg-surface border border-border rounded-lg px-4 py-3 hover:border-border-strong"
                   >
                     <div>
-                      <div className="font-semibold text-sm">{w.name}</div>
+                      <div className="font-semibold text-sm"><Tx>{w.name}</Tx></div>
                       <div className="font-mono text-xs text-text-mid">{formatDate(w.date)}</div>
                     </div>
                     <span className="text-text-dim text-xs">{t('exercisesCount')(w.exercises.length)}</span>
@@ -253,7 +262,7 @@ export default function TraineeDashboard() {
                   <div key={s._id} className="py-2.5 border-b border-border last:border-0">
                     <div className="flex justify-between items-center">
                       <div>
-                        <div className="font-semibold text-sm">{s.name || 'Workout'}</div>
+                        <div className="font-semibold text-sm"><Tx>{s.name || 'Workout'}</Tx></div>
                         <div className="font-mono text-xs text-text-mid">{formatDate(s.date)}</div>
                       </div>
                       <div className="font-mono text-accent font-bold text-sm">{s.setsCompleted}/{s.setsTotal}</div>
@@ -261,7 +270,7 @@ export default function TraineeDashboard() {
                     {s.coachNote && (
                       <div className="mt-2 flex gap-2 bg-surface-2/50 border-l-2 border-warm rounded-r px-3 py-2">
                         <span className="text-warm text-xs shrink-0">{t('coachNoteLabel')}</span>
-                        <p className="text-xs text-text leading-relaxed">{s.coachNote}</p>
+                        <p className="text-xs text-text leading-relaxed"><Tx>{s.coachNote}</Tx></p>
                       </div>
                     )}
                   </div>

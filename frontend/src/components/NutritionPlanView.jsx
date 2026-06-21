@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useLanguage } from '../contexts/LanguageContext';
+import { preTranslate } from '../lib/translator';
 import MacroBar from './MacroBar';
+import Tx from './Tx';
 
 function youtubeId(url) {
   if (!url) return null;
@@ -10,28 +12,42 @@ function youtubeId(url) {
 }
 
 export default function NutritionPlanView() {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [plan, setPlan] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
   const TYPE_LABEL = {
-    breakfast:    t('mealType_breakfast'),
-    lunch:        t('mealType_lunch'),
-    dinner:       t('mealType_dinner'),
-    snack:        t('mealType_snack'),
+    breakfast:      t('mealType_breakfast'),
+    lunch:          t('mealType_lunch'),
+    dinner:         t('mealType_dinner'),
+    snack:          t('mealType_snack'),
     'pre-workout':  t('mealType_preWorkout'),
     'post-workout': t('mealType_postWorkout'),
-    meal:         t('mealType_meal'),
+    meal:           t('mealType_meal'),
   };
 
   useEffect(() => {
     (async () => {
-      try { const d = await api.get('/api/nutrition/me'); setPlan(d.plan); }
-      catch { /* ignore */ }
+      try {
+        const d = await api.get('/api/nutrition/me');
+        const p = d.plan;
+        if (p && lang === 'ar') {
+          // Pre-translate ALL strings during the loading phase so <Tx> renders
+          // instantly from cache — the user never sees English content.
+          await preTranslate([
+            p.title, p.notes,
+            ...p.meals.flatMap((m) => [
+              m.name, m.instructions, m.notes,
+              ...m.ingredients.map((i) => i.name),
+            ]),
+          ].filter(Boolean));
+        }
+        setPlan(p);
+      } catch { /* ignore */ }
       setLoaded(true);
     })();
-  }, []);
+  }, [lang]);
 
   if (!loaded) return <div className="text-text-dim text-xs font-mono animate-pulse py-10 text-center">{t('loading')}</div>;
 
@@ -46,17 +62,27 @@ export default function NutritionPlanView() {
   }
 
   const totals = plan.meals.reduce(
-    (acc, m) => ({ calories:acc.calories+(m.macros?.calories||0), protein:acc.protein+(m.macros?.protein||0), carbs:acc.carbs+(m.macros?.carbs||0), fat:acc.fat+(m.macros?.fat||0), fiber:acc.fiber+(m.macros?.fiber||0) }),
-    { calories:0, protein:0, carbs:0, fat:0, fiber:0 }
+    (acc, m) => ({
+      calories: acc.calories + (m.macros?.calories || 0),
+      protein:  acc.protein  + (m.macros?.protein  || 0),
+      carbs:    acc.carbs    + (m.macros?.carbs    || 0),
+      fat:      acc.fat      + (m.macros?.fat      || 0),
+      fiber:    acc.fiber    + (m.macros?.fiber    || 0),
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
   );
 
   return (
     <div className="space-y-4">
       <div className="bg-surface border border-border rounded-xl p-4">
         <div className="text-[10px] uppercase tracking-widest text-text-mid mb-1">{t('yourPlan')}</div>
-        <h2 className="text-xl font-extrabold mb-3">{plan.title}</h2>
+        <h2 className="text-xl font-extrabold mb-3"><Tx>{plan.title}</Tx></h2>
         <MacroBar macros={totals} />
-        {plan.notes && <p className="mt-3 text-sm text-text leading-relaxed border-t border-border pt-3">{plan.notes}</p>}
+        {plan.notes && (
+          <p className="mt-3 text-sm text-text leading-relaxed border-t border-border pt-3">
+            <Tx>{plan.notes}</Tx>
+          </p>
+        )}
       </div>
 
       <div className="space-y-2.5">
@@ -69,11 +95,15 @@ export default function NutritionPlanView() {
               <button className="w-full text-left px-4 py-3.5 flex items-center gap-3" onClick={() => setExpanded(isOpen ? null : meal._id)}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-bold text-sm truncate">{meal.name}</span>
+                    <span className="font-bold text-sm truncate"><Tx>{meal.name}</Tx></span>
                     {meal.time && <span className="text-[10px] text-text-dim font-mono shrink-0">{meal.time}</span>}
                   </div>
-                  <div className="text-[10px] text-text-mid uppercase tracking-wide">{TYPE_LABEL[meal.mealType] || meal.mealType}</div>
-                  {hasMacros && !isOpen && <div className="mt-1.5"><MacroBar macros={meal.macros} compact /></div>}
+                  <div className="text-[10px] text-text-mid uppercase tracking-wide">
+                    {TYPE_LABEL[meal.mealType] || meal.mealType}
+                  </div>
+                  {hasMacros && !isOpen && (
+                    <div className="mt-1.5"><MacroBar macros={meal.macros} compact /></div>
+                  )}
                 </div>
                 <span className={`text-text-dim text-lg transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
               </button>
@@ -86,37 +116,49 @@ export default function NutritionPlanView() {
                       <MacroBar macros={meal.macros} />
                     </div>
                   )}
+
                   {videoId && (
                     <div>
                       <div className="text-[10px] uppercase tracking-widest text-text-dim mb-2">{t('videoTutorial')}</div>
                       <div className="rounded-xl overflow-hidden border border-border" style={{ aspectRatio: '16/9' }}>
-                        <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${videoId}`} title={meal.name} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen className="block" />
+                        <iframe
+                          width="100%" height="100%"
+                          src={`https://www.youtube.com/embed/${videoId}`}
+                          title={meal.name}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen className="block"
+                        />
                       </div>
                     </div>
                   )}
+
                   {meal.ingredients && meal.ingredients.length > 0 && (
                     <div>
                       <div className="text-[10px] uppercase tracking-widest text-text-dim mb-2">{t('ingredients')}</div>
                       <div className="space-y-0">
                         {meal.ingredients.map((ing, i) => (
                           <div key={i} className="flex justify-between items-center py-1.5 border-b border-border last:border-0 text-sm">
-                            <span>{ing.name}</span>
+                            <span><Tx>{ing.name}</Tx></span>
                             {ing.amount && <span className="font-mono text-xs text-accent">{ing.amount}</span>}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+
                   {meal.instructions && (
                     <div>
                       <div className="text-[10px] uppercase tracking-widest text-text-dim mb-2">{t('howToPrepare')}</div>
-                      <p className="text-sm leading-relaxed text-text whitespace-pre-wrap">{meal.instructions}</p>
+                      <p className="text-sm leading-relaxed text-text whitespace-pre-wrap">
+                        <Tx>{meal.instructions}</Tx>
+                      </p>
                     </div>
                   )}
+
                   {meal.notes && (
                     <div className="flex gap-2 bg-warm/10 border-l-2 border-warm rounded-r px-3 py-2">
                       <span className="text-warm text-xs shrink-0 font-semibold">{t('coachLabel')}</span>
-                      <p className="text-xs text-text leading-relaxed">{meal.notes}</p>
+                      <p className="text-xs text-text leading-relaxed"><Tx>{meal.notes}</Tx></p>
                     </div>
                   )}
                 </div>

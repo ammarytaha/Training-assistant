@@ -24,6 +24,7 @@ const notificationRoutes = require('./routes/notifications');
 const uploadRoutes = require('./routes/upload');
 const nutritionRoutes = require('./routes/nutrition');
 const mealLibraryRoutes = require('./routes/mealLibrary');
+const translateRoutes = require('./routes/translate');
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/coach/meal-library', mealLibraryRoutes);
+app.use('/api/translate', translateRoutes);
 
 // ─── 404 + error handling ───────────────────────────────────────────
 app.use(notFound);
